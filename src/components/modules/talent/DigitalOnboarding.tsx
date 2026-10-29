@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   UserPlus,
   CheckCircle2,
@@ -7,17 +7,35 @@ import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  FileCheck
+  FileCheck,
+  Users
 } from 'lucide-react';
 import { useHR } from '../../../context/HRContext';
 
 export const DigitalOnboarding: React.FC = () => {
   const { onboardingTasks, toggleOnboardingTask, employees } = useHR();
+  const [selectedEmpId, setSelectedEmpId] = useState<string>(employees[0]?.id || '');
 
-  const newHire = employees.find((e) => e.employmentType === 'Probation') || employees[employees.length - 1]; // Zoe Kaufman
+  const newHire = employees.find((e) => e.id === selectedEmpId) || employees[0];
+
+  if (!newHire) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-slate-300 space-y-3">
+        <Users className="w-8 h-8 text-slate-400 mx-auto" />
+        <h3 className="text-base font-bold text-slate-800">No Employees in Directory</h3>
+        <p className="text-xs text-slate-500">Add staff members to track their digital onboarding progress.</p>
+      </div>
+    );
+  }
 
   const completedCount = onboardingTasks.filter((t) => t.completed).length;
-  const progressPercent = Math.round((completedCount / onboardingTasks.length) * 100);
+  const progressPercent =
+    onboardingTasks.length > 0
+      ? Math.round((completedCount / onboardingTasks.length) * 100)
+      : 0;
+
+  const joinTime = new Date(newHire.joiningDate).getTime();
+  const daysIn = Math.max(1, Math.floor((Date.now() - joinTime) / (1000 * 60 * 60 * 24)));
 
   const categories = ['Documentation', 'IT Setup', 'Compliance', 'Culture & Meet'] as const;
 
@@ -31,10 +49,20 @@ export const DigitalOnboarding: React.FC = () => {
           </p>
         </div>
 
+        {/* Employee Picker */}
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold px-3 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg">
-            Active New Hire: {newHire.firstName} {newHire.lastName} ({newHire.designation})
-          </span>
+          <label className="text-xs text-slate-500 font-medium">Viewing Candidate:</label>
+          <select
+            value={newHire.id}
+            onChange={(e) => setSelectedEmpId(e.target.value)}
+            className="text-xs font-semibold px-3 py-1.5 bg-orange-50 text-orange-800 border border-orange-200 rounded-xl"
+          >
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.firstName} {emp.lastName} ({emp.designation})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -52,8 +80,8 @@ export const DigitalOnboarding: React.FC = () => {
               <h3 className="text-base font-bold text-slate-900">
                 {newHire.firstName} {newHire.lastName}
               </h3>
-              <span className="px-2 py-0.2 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">
-                Onboarding Day 4
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">
+                {daysIn > 90 ? 'Post-Probation' : `Day ${daysIn} with Team`}
               </span>
             </div>
             <p className="text-xs text-slate-500">{newHire.designation} · {newHire.department}</p>

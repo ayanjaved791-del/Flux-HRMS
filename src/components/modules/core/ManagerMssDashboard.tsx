@@ -24,8 +24,10 @@ export const ManagerMssDashboard: React.FC = () => {
     setActiveSubTab,
   } = useHR();
 
-  const currentEmpId = currentUser.employeeId || 'emp_01';
-  const myDirectReports = employees.filter((e) => e.managerId === currentEmpId);
+  const currentEmpId = currentUser.employeeId || employees[0]?.id || '';
+  const myDirectReports = employees.filter(
+    (e) => e.managerId === currentEmpId || (currentUser.role === 'admin' && e.id !== currentEmpId)
+  );
 
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending');
   const pendingTimesheets = timesheets.filter((t) => t.status === 'Submitted');
@@ -166,28 +168,34 @@ export const ManagerMssDashboard: React.FC = () => {
         <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
           Direct Reports Directory
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {myDirectReports.map((emp) => (
-            <div
-              key={emp.id}
-              className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 text-xs"
-            >
-              <img
-                src={emp.avatar}
-                alt={emp.firstName}
-                className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                referrerPolicy="no-referrer"
-              />
-              <div className="min-w-0">
-                <p className="font-bold text-slate-900 truncate">
-                  {emp.firstName} {emp.lastName}
-                </p>
-                <p className="text-[11px] text-slate-500 truncate">{emp.designation}</p>
-                <p className="text-[10px] text-slate-400 font-mono mt-0.5">{emp.email}</p>
+        {myDirectReports.length === 0 ? (
+          <p className="text-xs text-slate-400 py-6 text-center italic">
+            No direct reports currently assigned under this leadership profile.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {myDirectReports.map((emp) => (
+              <div
+                key={emp.id}
+                className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 text-xs"
+              >
+                <img
+                  src={emp.avatar}
+                  alt={emp.firstName}
+                  className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 truncate">
+                    {emp.firstName} {emp.lastName}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate">{emp.designation}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">{emp.email}</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

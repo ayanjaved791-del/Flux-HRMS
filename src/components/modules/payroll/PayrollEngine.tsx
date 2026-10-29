@@ -26,7 +26,10 @@ export const PayrollEngine: React.FC<PayrollEngineProps> = ({ onViewPayslip }) =
     currencyRates,
   } = useHR();
 
-  const [filterPeriod, setFilterPeriod] = useState('October 2026');
+  const availablePeriods = Array.from(new Set(payrollRuns.map((p) => p.period)));
+  const defaultPeriod = availablePeriods[0] || 'November 2026';
+
+  const [filterPeriod, setFilterPeriod] = useState(defaultPeriod);
   const [isProcessingRun, setIsProcessingRun] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -43,10 +46,11 @@ export const PayrollEngine: React.FC<PayrollEngineProps> = ({ onViewPayslip }) =
     setIsProcessingRun(true);
     setTimeout(() => {
       processPayrollRun();
+      setFilterPeriod('November 2026');
       setIsProcessingRun(false);
       setSuccessMsg('November 2026 Payroll Cycle processed and direct deposits queued!');
       setTimeout(() => setSuccessMsg(null), 2500);
-    }, 800);
+    }, 600);
   };
 
   return (
@@ -124,77 +128,101 @@ export const PayrollEngine: React.FC<PayrollEngineProps> = ({ onViewPayslip }) =
               onChange={(e) => setFilterPeriod(e.target.value)}
               className="text-xs font-semibold px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700"
             >
-              <option value="October 2026">October 2026</option>
-              <option value="November 2026">November 2026</option>
+              {availablePeriods.length === 0 ? (
+                <option value="November 2026">November 2026</option>
+              ) : (
+                availablePeriods.map((period) => (
+                  <option key={period} value={period}>
+                    {period}
+                  </option>
+                ))
+              )}
             </select>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <th className="py-3 px-4">Employee</th>
-                <th className="py-3 px-4">Gross Pay</th>
-                <th className="py-3 px-4">Base Salary</th>
-                <th className="py-3 px-4">HRA & Allowances</th>
-                <th className="py-3 px-4">Tax Deductions</th>
-                <th className="py-3 px-4">401k / Benefits</th>
-                <th className="py-3 px-4">Net Payable</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {currentPeriodRuns.map((run) => (
-                <tr key={run.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3 px-4">
-                    <p className="font-bold text-slate-900">{run.employeeName}</p>
-                    <p className="text-[11px] text-slate-500 font-mono">{run.designation}</p>
-                  </td>
-                  <td className="py-3 px-4 font-bold text-slate-900 tabular-nums">
-                    {selectedCurrency} {Math.round(run.grossSalary * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 tabular-nums text-slate-700">
-                    {selectedCurrency} {Math.round(run.basicSalary * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 tabular-nums text-slate-700">
-                    {selectedCurrency} {Math.round((run.hra + run.allowances) * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 tabular-nums text-red-600 font-medium">
-                    -{selectedCurrency} {Math.round(run.statutoryTax * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 tabular-nums text-blue-600 font-medium">
-                    -{selectedCurrency} {Math.round((run.providentFund + run.benefitsDeduction) * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 font-extrabold text-emerald-600 tabular-nums bg-emerald-50/30">
-                    {selectedCurrency} {Math.round(run.netPayable * rate).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                        run.paymentStatus === 'Paid'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}
-                    >
-                      {run.paymentStatus}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <button
-                      onClick={() => onViewPayslip(run)}
-                      className="px-2.5 py-1 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1 ml-auto"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Payslip</span>
-                    </button>
-                  </td>
+        {currentPeriodRuns.length === 0 ? (
+          <div className="p-12 text-center border-dashed border-slate-200 space-y-3">
+            <Coins className="w-8 h-8 text-slate-400 mx-auto" />
+            <h3 className="text-base font-bold text-slate-800">No Payroll Disbursed for {filterPeriod}</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              Run the payroll engine cycle to compute tax withholding, employee deductions, and bank payouts.
+            </p>
+            <button
+              onClick={handleRunPayrollCycle}
+              disabled={isProcessingRun}
+              className="px-4 py-2 bg-orange-600 text-white text-xs font-semibold rounded-xl hover:bg-orange-700 shadow-2xs"
+            >
+              Execute {filterPeriod} Run
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <th className="py-3 px-4">Employee</th>
+                  <th className="py-3 px-4">Gross Pay</th>
+                  <th className="py-3 px-4">Base Salary</th>
+                  <th className="py-3 px-4">HRA & Allowances</th>
+                  <th className="py-3 px-4">Tax Deductions</th>
+                  <th className="py-3 px-4">401k / Benefits</th>
+                  <th className="py-3 px-4">Net Payable</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {currentPeriodRuns.map((run) => (
+                  <tr key={run.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-4">
+                      <p className="font-bold text-slate-900">{run.employeeName}</p>
+                      <p className="text-[11px] text-slate-500 font-mono">{run.designation}</p>
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900 tabular-nums">
+                      {selectedCurrency} {Math.round(run.grossSalary * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums text-slate-700">
+                      {selectedCurrency} {Math.round(run.basicSalary * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums text-slate-700">
+                      {selectedCurrency} {Math.round((run.hra + run.allowances) * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums text-red-600 font-medium">
+                      -{selectedCurrency} {Math.round(run.statutoryTax * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums text-blue-600 font-medium">
+                      -{selectedCurrency} {Math.round((run.providentFund + run.benefitsDeduction) * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 font-extrabold text-emerald-600 tabular-nums bg-emerald-50/30">
+                      {selectedCurrency} {Math.round(run.netPayable * rate).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                          run.paymentStatus === 'Paid'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {run.paymentStatus}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => onViewPayslip(run)}
+                        className="px-2.5 py-1 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1 ml-auto"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Payslip</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

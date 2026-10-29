@@ -32,10 +32,23 @@ export const EmployeeEssDashboard: React.FC = () => {
     shiftRosters,
   } = useHR();
 
+  const fallbackEmp = {
+    id: currentUser.employeeId || 'emp_user',
+    firstName: currentUser.name.split(' ')[0] || 'User',
+    lastName: currentUser.name.split(' ')[1] || '',
+    avatar: currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    designation: currentUser.designation || 'Team Member',
+    department: currentUser.department || 'Operations',
+    employeeCode: 'EMP-ME',
+    leaveBalances: { annual: 20, sick: 10, casual: 5, parental: 0 },
+    salary: { baseMonthly: 8000, hra: 2000, specialAllowance: 1000, currency: 'USD' },
+  };
+
   const currentEmp =
     employees.find((e) => e.id === currentUser.employeeId) ||
     employees.find((e) => e.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-    employees[1]; // default to Elena
+    employees[0] ||
+    fallbackEmp;
 
   const [isApplyLeaveOpen, setIsApplyLeaveOpen] = useState(false);
   const [leaveType, setLeaveType] = useState<'Annual' | 'Sick' | 'Casual' | 'Parental'>('Annual');
@@ -44,10 +57,10 @@ export const EmployeeEssDashboard: React.FC = () => {
   const [leaveDays, setLeaveDays] = useState(2);
   const [leaveReason, setLeaveReason] = useState('');
 
-  const myLeaves = leaveRequests.filter((l) => l.employeeId === currentEmp.id);
-  const myKudos = peerKudos.filter((k) => k.toName.includes(currentEmp.firstName));
-  const myPayslip = payrollRuns.find((p) => p.employeeId === currentEmp.id);
-  const myShift = shiftRosters.find((s) => s.employeeId === currentEmp.id);
+  const myLeaves = currentEmp ? leaveRequests.filter((l) => l.employeeId === currentEmp.id) : [];
+  const myKudos = currentEmp ? peerKudos.filter((k) => k.toName.includes(currentEmp.firstName)) : [];
+  const myPayslip = currentEmp ? payrollRuns.find((p) => p.employeeId === currentEmp.id) : null;
+  const myShift = currentEmp ? shiftRosters.find((s) => s.employeeId === currentEmp.id) : null;
 
   const handleLeaveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -274,10 +287,14 @@ export const EmployeeEssDashboard: React.FC = () => {
                   <FileText className="w-4 h-4 text-orange-500" />
                 </div>
                 <p className="text-xl font-extrabold text-slate-900 tabular-nums">
-                  ${myPayslip ? myPayslip.netPayable.toLocaleString() : '11,895'} USD
+                  {myPayslip
+                    ? `$${myPayslip.netPayable.toLocaleString()} USD`
+                    : currentEmp
+                    ? `$${Math.round(currentEmp.salary.baseMonthly * 0.8).toLocaleString()} USD (Estimated)`
+                    : '$0 USD'}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Period: October 2026 · Status: Paid
+                  {myPayslip ? `Period: ${myPayslip.period} · ${myPayslip.paymentStatus}` : 'Estimated Monthly Net Wage'}
                 </p>
               </div>
 
@@ -302,10 +319,10 @@ export const EmployeeEssDashboard: React.FC = () => {
                   <Gift className="w-4 h-4 text-orange-500" />
                 </div>
                 <p className="text-xl font-extrabold text-slate-900 tabular-nums">
-                  {myKudos.reduce((sum, k) => sum + k.points, 250)} pts
+                  {myKudos.reduce((sum, k) => sum + k.points, 0)} pts
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {myKudos.length > 0 ? `Latest: "${myKudos[0].badge}" from ${myKudos[0].fromName}` : 'No new kudos'}
+                  {myKudos.length > 0 ? `Latest: "${myKudos[0].badge}" from ${myKudos[0].fromName}` : 'No kudos received yet'}
                 </p>
               </div>
 

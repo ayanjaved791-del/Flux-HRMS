@@ -156,13 +156,16 @@ interface HRContextType {
 
   // Performance & Culture
   goalsOKR: GoalOKR[];
+  addGoalOKR: (goal: Omit<GoalOKR, 'id'>) => void;
   updateGoalProgress: (goalId: string, newProgress: number) => void;
   appraisals: AppraisalReview[];
+  addAppraisal: (review: Omit<AppraisalReview, 'id'>) => void;
   courses: LMSCourse[];
   toggleCourseEnrollment: (courseId: string) => void;
   updateCourseProgress: (courseId: string, percent: number) => void;
   competencies: CompetencyItem[];
   successionPlans: SuccessionPlan[];
+  addSuccessionPlan: (plan: Omit<SuccessionPlan, 'id'>) => void;
   pulseSurvey: PulseSurveyResponse;
   votePulseSurvey: (optionLabel: string) => void;
   peerKudos: PeerKudo[];
@@ -171,6 +174,7 @@ interface HRContextType {
 
   // Assets, Documents & Automation
   companyAssets: CompanyAsset[];
+  addAsset: (asset: Omit<CompanyAsset, 'id'>) => void;
   assignAsset: (assetId: string, employeeId: string) => void;
   returnAsset: (assetId: string) => void;
   documents: DocumentItem[];
@@ -233,10 +237,10 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [backgroundChecks] = useState<BackgroundCheck[]>(initialBackgroundChecks);
   const [offboardingRecords, setOffboardingRecords] = useState<OffboardingRecord[]>(initialOffboardingRecords);
   const [goalsOKR, setGoalsOKR] = useState<GoalOKR[]>(initialGoalsOKR);
-  const [appraisals] = useState<AppraisalReview[]>(initialAppraisals);
+  const [appraisals, setAppraisals] = useState<AppraisalReview[]>(initialAppraisals);
   const [courses, setCourses] = useState<LMSCourse[]>(initialCourses);
   const [competencies] = useState<CompetencyItem[]>(initialCompetencies);
-  const [successionPlans] = useState<SuccessionPlan[]>(initialSuccessionPlans);
+  const [successionPlans, setSuccessionPlans] = useState<SuccessionPlan[]>(initialSuccessionPlans);
   const [pulseSurvey, setPulseSurvey] = useState<PulseSurveyResponse>(initialPulseSurvey);
   const [peerKudos, setPeerKudos] = useState<PeerKudo[]>(initialPeerKudos);
   const [companyAssets, setCompanyAssets] = useState<CompanyAsset[]>(initialCompanyAssets);
@@ -580,12 +584,12 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Expenses
   const addExpenseClaim = (claim: Omit<ExpenseClaim, 'id' | 'status' | 'employeeId' | 'employeeName'>) => {
-    const emp = employees.find((e) => e.id === (currentUser.employeeId || 'emp_02')) || employees[1];
+    const emp = employees.find((e) => e.id === currentUser.employeeId) || employees[0];
     const newClaim: ExpenseClaim = {
       ...claim,
       id: `exp_${Date.now()}`,
-      employeeId: emp.id,
-      employeeName: `${emp.firstName} ${emp.lastName}`,
+      employeeId: emp ? emp.id : (currentUser.employeeId || 'emp_user'),
+      employeeName: emp ? `${emp.firstName} ${emp.lastName}` : currentUser.name,
       status: 'Pending',
     };
     setExpenseClaims((prev) => [newClaim, ...prev]);
@@ -645,8 +649,32 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // Performance
+  const addGoalOKR = (goal: Omit<GoalOKR, 'id'>) => {
+    const newGoal: GoalOKR = {
+      ...goal,
+      id: `okr_${Date.now()}`,
+    };
+    setGoalsOKR((prev) => [newGoal, ...prev]);
+  };
+
   const updateGoalProgress = (goalId: string, newProgress: number) => {
     setGoalsOKR((prev) => prev.map((g) => (g.id === goalId ? { ...g, progress: newProgress } : g)));
+  };
+
+  const addAppraisal = (review: Omit<AppraisalReview, 'id'>) => {
+    const newReview: AppraisalReview = {
+      ...review,
+      id: `appr_${Date.now()}`,
+    };
+    setAppraisals((prev) => [newReview, ...prev]);
+  };
+
+  const addSuccessionPlan = (plan: Omit<SuccessionPlan, 'id'>) => {
+    const newPlan: SuccessionPlan = {
+      ...plan,
+      id: `succ_${Date.now()}`,
+    };
+    setSuccessionPlans((prev) => [newPlan, ...prev]);
   };
 
   const toggleCourseEnrollment = (courseId: string) => {
@@ -739,6 +767,14 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     );
   };
 
+  const addAsset = (asset: Omit<CompanyAsset, 'id'>) => {
+    const newAsset: CompanyAsset = {
+      ...asset,
+      id: `asset_${Date.now()}`,
+    };
+    setCompanyAssets((prev) => [newAsset, ...prev]);
+  };
+
   const uploadDocument = (doc: Omit<DocumentItem, 'id' | 'uploadedDate'>) => {
     const newDoc: DocumentItem = {
       ...doc,
@@ -779,7 +815,7 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     setAssistantMessages((prev) => [...prev, userMsg]);
 
-    // Intelligent context-aware answer generation
+    // Intelligent context-aware answer generation from live state
     setTimeout(() => {
       const lower = queryText.toLowerCase();
       let reply = '';
@@ -788,7 +824,7 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (lower.includes('attendance') || lower.includes('present') || lower.includes('punch')) {
         const presentCount = attendanceRecords.filter((r) => r.date === todayStr).length;
         const lateCount = attendanceRecords.filter((r) => r.date === todayStr && r.status === 'Late').length;
-        reply = `Here is today's Attendance Summary (${todayStr}):\n• Total Punches Today: ${presentCount} / ${employees.length} employees\n• On-time punches: ${presentCount - lateCount}\n• Late arrivals: ${lateCount}\n• Office HQ Geofence check: Active at ${company.hqLocation.name} (150m radius).`;
+        reply = `Here is today's Attendance Summary (${todayStr}):\n• Total Punches Today: ${presentCount} / ${employees.length} employees\n• On-time punches: ${presentCount - lateCount}\n• Late arrivals: ${lateCount}\n• Office HQ Geofence check: Active at ${company.hqLocation.name} (${company.hqLocation.radiusMeters}m radius).`;
         actions = [
           { label: 'Open Attendance Module', actionKey: 'NAV_ATTENDANCE' },
           { label: 'Open Camera Check-In', actionKey: 'OPEN_PUNCH_MODAL' },
@@ -803,27 +839,35 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             { label: 'View Leave Tracker', actionKey: 'NAV_LEAVES' },
           ];
         } else {
-          reply = `All leave requests are currently reviewed! No pending approvals. Upcoming holidays include Thanksgiving Day on Nov 26.`;
+          reply = `All leave requests are currently reviewed! No pending approvals. Active holiday schedule has ${holidays.length} listed holidays.`;
         }
       } else if (lower.includes('payroll') || lower.includes('salary') || lower.includes('net pay') || lower.includes('tax')) {
         const totalNet = payrollRuns.reduce((sum, r) => sum + r.netPayable, 0);
         const totalTax = payrollRuns.reduce((sum, r) => sum + r.statutoryTax, 0);
-        reply = `October 2026 Payroll Summary:\n• Disbursed Net Pay: $${totalNet.toLocaleString()} USD\n• Total Statutory Tax Withheld: $${totalTax.toLocaleString()} USD\n• Currency in use: ${selectedCurrency}\n• All direct deposits were executed on Oct 28.`;
+        reply = `Current Payroll Run Summary:\n• Processed Records: ${payrollRuns.length}\n• Disbursed Net Pay: $${totalNet.toLocaleString()} ${selectedCurrency}\n• Statutory Tax Withheld: $${totalTax.toLocaleString()} ${selectedCurrency}\n• Active Currency: ${selectedCurrency}`;
         actions = [
           { label: 'Open Payroll Engine', actionKey: 'NAV_PAYROLL' },
           { label: 'Open Tax Calculator', actionKey: 'NAV_TAX_CALC' },
         ];
       } else if (lower.includes('okr') || lower.includes('goal') || lower.includes('performance')) {
-        const avg = Math.round(goalsOKR.reduce((a, b) => a + b.progress, 0) / goalsOKR.length);
-        reply = `Company & Team OKR Overview (Q4 2026):\n• Overall Objective Completion: ${avg}%\n• Top Goal: "${goalsOKR[0].title}" (${goalsOKR[0].progress}%)\n• Design System 3.0: 74% completed.`;
+        if (goalsOKR.length > 0) {
+          const avg = Math.round(goalsOKR.reduce((a, b) => a + b.progress, 0) / goalsOKR.length);
+          reply = `Company & Team OKR Overview:\n• Active Objectives: ${goalsOKR.length}\n• Overall Completion Rate: ${avg}%\n• Top Goal: "${goalsOKR[0].title}" (${goalsOKR[0].progress}% completion).`;
+        } else {
+          reply = `There are currently no active OKRs recorded in the workspace.\nYou can establish company or departmental goals in the Performance module.`;
+        }
         actions = [{ label: 'Go to OKR Tracker', actionKey: 'NAV_OKRS' }];
       } else if (lower.includes('candidate') || lower.includes('recruit') || lower.includes('ats') || lower.includes('interview')) {
-        reply = `Recruitment Pipeline Status:\n• Active Candidates: ${candidates.length}\n• In Technical Round / Interview: ${candidates.filter((c) => c.stage === 'Interview' || c.stage === 'Technical Round').length}\n• Offers Extended: ${candidates.filter((c) => c.stage === 'Offer').length} (Maya Lin for Staff ML)\n• Hired: 1 candidate (Samantha Grey, joining Nov 15).`;
+        const inInterview = candidates.filter((c) => c.stage === 'Interview' || c.stage === 'Technical Round').length;
+        const inOffer = candidates.filter((c) => c.stage === 'Offer').length;
+        const hired = candidates.filter((c) => c.stage === 'Hired').length;
+        reply = `Recruitment Pipeline Status:\n• Active Candidates in Pool: ${candidates.length}\n• In Interview / Assessment: ${inInterview}\n• Offers Extended: ${inOffer}\n• Hired Candidates: ${hired}\n• Scheduled Interview Sessions: ${interviews.length}`;
         actions = [{ label: 'View ATS Kanban Board', actionKey: 'NAV_ATS' }];
       } else if (lower.includes('policy') || lower.includes('gratuity') || lower.includes('overtime')) {
         reply = `Company Policy Overview:\n• Standard Working Hours: 40 hrs/week (Mon-Fri 9AM-5PM)\n• Overtime Rates: 1.5x hourly rate on weekdays, 2.0x on weekends/holidays\n• End-of-Service Gratuity: 21 days basic pay per year for first 5 years, 30 days per year thereafter\n• PTO Entitlement: 20 days annual + 10 days sick leave with carry-forward up to 5 days.`;
       } else {
-        reply = `I analyzed our workforce database for "${queryText}". We have ${employees.length} active employees across 7 departments, with ${attendanceRecords.length} recorded attendance events and ${companyAssets.length} tracked company assets.`;
+        const uniqueDepts = new Set(employees.map((e) => e.department)).size;
+        reply = `I analyzed our workforce database for "${queryText}". We have ${employees.length} active employee${employees.length === 1 ? '' : 's'} across ${uniqueDepts} department${uniqueDepts === 1 ? '' : 's'}, with ${attendanceRecords.length} recorded attendance events and ${companyAssets.length} tracked company assets.`;
         actions = [
           { label: 'View Employee Directory', actionKey: 'NAV_DIRECTORY' },
           { label: 'Summarize Attendance', actionKey: 'SUMMARIZE_ATTENDANCE' },
@@ -961,19 +1005,23 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         offboardingRecords,
         updateOffboardingStatus,
         goalsOKR,
+        addGoalOKR,
         updateGoalProgress,
         appraisals,
+        addAppraisal,
         courses,
         toggleCourseEnrollment,
         updateCourseProgress,
         competencies,
         successionPlans,
+        addSuccessionPlan,
         pulseSurvey,
         votePulseSurvey,
         peerKudos,
         sendPeerKudo,
         likePeerKudo,
         companyAssets,
+        addAsset,
         assignAsset,
         returnAsset,
         documents,
