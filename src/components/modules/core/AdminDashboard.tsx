@@ -23,6 +23,7 @@ export const AdminDashboard: React.FC = () => {
     employees,
     attendanceRecords,
     leaveRequests,
+    expenseClaims,
     timesheets,
     goalsOKR,
     interviews,
@@ -101,33 +102,85 @@ export const AdminDashboard: React.FC = () => {
       module: 'attendance' as const,
       tab: 'attendance-overview',
     },
+    ...(leaveRequests.filter((l) => l.status === 'Pending').length > 0
+      ? [
+          {
+            title: `Review ${leaveRequests.filter((l) => l.status === 'Pending').length} pending employee applications`,
+            dept: 'People & Governance',
+            due: 'Immediate',
+            progress: 30,
+            module: 'core' as const,
+            tab: 'applications',
+          },
+        ]
+      : []),
   ];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Top Welcome Banner */}
-      <div className="relative rounded-2xl bg-[#DDF0FF] p-6 lg:p-7 border border-[#BDE0FE] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 overflow-hidden">
+      <div className="relative rounded-3xl bg-[#DDF0FF] p-6 lg:p-8 border border-[#BDE0FE] flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 overflow-hidden">
         <div className="relative z-10">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-1">
-            Thursday, October 29, 2026 · {company.name} Workspace
+          <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-1">
+            {company.name} · Master Administrator Console
           </p>
           <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            Hello, {currentUser.name.split(' ')[0]}! <span className="text-2xl">👋</span>
+            Hello, {currentUser?.name ? currentUser.name.split(' ')[0] : 'Administrator'}! <span className="text-2xl">👋</span>
           </h1>
           <p className="text-sm text-slate-600 mt-1 max-w-xl">
-            Live overview of your workforce lifecycle, attendance punches, payroll disbursements, and active talent.
+            Live overview of workforce operations, attendance punches, employee applications, and compensation.
           </p>
+
+          {/* Quick Admin Actions Row */}
+          <div className="flex flex-wrap items-center gap-2 mt-4">
+            <button
+              onClick={() => {
+                setActiveModule('core');
+                setActiveSubTab('employees');
+              }}
+              className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              + Onboard Employee
+            </button>
+            <button
+              onClick={() => {
+                setActiveModule('core');
+                setActiveSubTab('announcements');
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer"
+            >
+              Broadcast Announcement
+            </button>
+            <button
+              onClick={() => {
+                setActiveModule('payroll');
+                setActiveSubTab('payslip-studio');
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer"
+            >
+              Design Payslips
+            </button>
+            <button
+              onClick={() => {
+                setActiveModule('core');
+                setActiveSubTab('applications');
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer"
+            >
+              Applications ({leaveRequests.filter((l) => l.status === 'Pending').length + expenseClaims.filter((e) => e.status === 'Pending').length})
+            </button>
+          </div>
         </div>
 
         {/* 3 Metric Cards with Real State Calculations */}
         <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full xl:w-auto">
           {/* Card 1: Total Employees */}
-          <div className="bg-white/90 backdrop-blur-xs rounded-xl p-3.5 border border-white/60 shadow-xs flex items-center gap-3.5 min-w-[170px]">
-            <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs shadow-orange-200">
+          <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 border border-white/60 shadow-xs flex items-center gap-3.5 min-w-[170px]">
+            <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center shrink-0 shadow-xs shadow-orange-200">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-xl font-extrabold text-slate-900 tabular-nums">
+              <p className="text-xl font-extrabold text-slate-900 tabular-nums font-mono">
                 {totalEmployeesCount}
               </p>
               <p className="text-[11px] font-medium text-slate-500">Total Employees</p>

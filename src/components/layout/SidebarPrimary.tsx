@@ -4,13 +4,14 @@ import {
   Clock,
   Wallet,
   Users2,
-  Target,
+  FileCheck2,
+  Megaphone,
+  Palette,
   ShieldCheck,
-  Bot,
-  Camera,
-  ArrowRightLeft,
   Building2,
-  Sparkles
+  User,
+  LogOut,
+  FolderLock
 } from 'lucide-react';
 import { useHR } from '../../context/HRContext';
 
@@ -24,63 +25,75 @@ export const SidebarPrimary: React.FC<SidebarPrimaryProps> = ({ onOpenAuthModal 
     setActiveModule,
     setActiveSubTab,
     activeRole,
-    switchRole,
     currentUser,
-    isPunchedIn,
-    setIsPunchModalOpen,
-    isAssistantOpen,
-    setIsAssistantOpen,
     leaveRequests,
-    candidates
+    expenseClaims,
+    announcements,
+    logoutUser,
+    company
   } = useHR();
 
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending').length;
-  const activeCandidates = candidates.filter((c) => c.stage !== 'Hired' && c.stage !== 'Rejected').length;
+  const pendingExpenses = expenseClaims.filter((e) => e.status === 'Pending').length;
+  const totalPendingApps = pendingLeaves + pendingExpenses;
 
-  const modules = [
+  // Role-specific primary modules
+  const adminModules = [
     {
       id: 'core' as const,
-      label: 'Core Workspace',
+      label: 'Core Admin',
       icon: LayoutDashboard,
-      defaultTab: activeRole === 'admin' ? 'dashboard' : 'employee-ess',
-      badge: null,
+      defaultTab: 'dashboard',
+      badge: totalPendingApps > 0 ? totalPendingApps : null,
     },
     {
       id: 'attendance' as const,
-      label: 'Time & Attendance',
+      label: 'Attendance',
       icon: Clock,
       defaultTab: 'attendance-overview',
-      badge: pendingLeaves > 0 ? pendingLeaves : null,
-    },
-    {
-      id: 'payroll' as const,
-      label: 'Payroll & Finance',
-      icon: Wallet,
-      defaultTab: 'payroll-engine',
       badge: null,
     },
     {
-      id: 'talent' as const,
-      label: 'Talent & Recruiting',
-      icon: Users2,
-      defaultTab: 'ats-kanban',
-      badge: activeCandidates > 0 ? activeCandidates : null,
-    },
-    {
-      id: 'performance' as const,
-      label: 'Performance & OKR',
-      icon: Target,
-      defaultTab: 'okr-goals',
+      id: 'payroll' as const,
+      label: 'Compensation',
+      icon: Wallet,
+      defaultTab: 'payslip-studio',
       badge: null,
     },
     {
       id: 'settings' as const,
-      label: 'Logistics & Security',
-      icon: ShieldCheck,
-      defaultTab: 'asset-ledger',
+      label: 'Company',
+      icon: Building2,
+      defaultTab: 'company-profile',
       badge: null,
     },
   ];
+
+  const employeeModules = [
+    {
+      id: 'core' as const,
+      label: 'My Portal',
+      icon: User,
+      defaultTab: 'employee-ess',
+      badge: announcements.length > 0 ? announcements.length : null,
+    },
+    {
+      id: 'attendance' as const,
+      label: 'Attendance',
+      icon: Clock,
+      defaultTab: 'attendance-overview',
+      badge: null,
+    },
+    {
+      id: 'payroll' as const,
+      label: 'Payslips',
+      icon: Wallet,
+      defaultTab: 'employee-payslips',
+      badge: null,
+    },
+  ];
+
+  const modules = activeRole === 'admin' ? adminModules : employeeModules;
 
   return (
     <aside className="w-18 shrink-0 bg-white border-r border-slate-200 flex flex-col items-center py-4 justify-between z-30 select-none">
@@ -91,20 +104,21 @@ export const SidebarPrimary: React.FC<SidebarPrimaryProps> = ({ onOpenAuthModal 
             setActiveModule('core');
             setActiveSubTab(activeRole === 'admin' ? 'dashboard' : 'employee-ess');
           }}
-          className="group relative flex items-center justify-center w-11 h-11 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors shadow-xs"
-          title="HRMate Home"
+          className="group relative flex items-center justify-center w-11 h-11 rounded-2xl bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors shadow-2xs"
+          title={`${company.name} Home`}
         >
-          <div className="w-6 h-6 flex items-center justify-center font-bold text-lg tracking-tighter">
-            <span className="text-orange-600 font-extrabold text-xl">HR</span>
+          <div className="w-7 h-7 flex items-center justify-center font-black text-lg tracking-tighter">
+            <span className="text-orange-600 font-black">{company.logo || 'HR'}</span>
           </div>
-          <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full bg-orange-500 ring-2 ring-white" />
+          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-orange-500 ring-2 ring-white" />
         </button>
 
-        {/* Primary Navigation Icons */}
-        <nav className="flex flex-col items-center gap-2 w-full px-2">
+        {/* Modules navigation stack */}
+        <nav className="flex flex-col items-center gap-2.5 w-full px-2">
           {modules.map((mod) => {
             const Icon = mod.icon;
             const isActive = activeModule === mod.id;
+
             return (
               <button
                 key={mod.id}
@@ -112,111 +126,38 @@ export const SidebarPrimary: React.FC<SidebarPrimaryProps> = ({ onOpenAuthModal 
                   setActiveModule(mod.id);
                   setActiveSubTab(mod.defaultTab);
                 }}
-                className={`group relative flex items-center justify-center w-11 h-11 rounded-xl transition-all ${
+                className={`relative flex flex-col items-center justify-center w-12 h-12 rounded-2xl transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-200'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                    ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20'
+                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
                 }`}
                 title={mod.label}
               >
                 <Icon className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 tracking-tight truncate max-w-[44px]">
+                  {mod.label}
+                </span>
 
-                {/* Subdued badge count */}
                 {mod.badge && (
-                  <span
-                    className={`absolute -top-1 -right-1 flex items-center justify-center min-w-4.5 h-4.5 px-1 text-[10px] font-bold rounded-full ring-2 ring-white ${
-                      isActive ? 'bg-slate-900 text-white' : 'bg-orange-500 text-white'
-                    }`}
-                  >
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white shadow-2xs ring-2 ring-white">
                     {mod.badge}
                   </span>
                 )}
-
-                {/* Tooltip on hover */}
-                <span className="absolute left-16 px-2.5 py-1 text-xs font-medium text-white bg-slate-800 rounded-md shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                  {mod.label}
-                </span>
               </button>
             );
           })}
         </nav>
       </div>
 
-      {/* Bottom Actions: Punch In, Smart Assistant, Role Switch, User */}
+      {/* Bottom Actions */}
       <div className="flex flex-col items-center gap-3 w-full px-2">
-        {/* Quick Camera Punch Button */}
         <button
-          onClick={() => setIsPunchModalOpen(true)}
-          className={`group relative flex items-center justify-center w-11 h-11 rounded-xl transition-all ${
-            isPunchedIn
-              ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
-              : 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 animate-pulse'
-          }`}
-          title={isPunchedIn ? 'Punch Out with Camera' : 'Punch In with Camera'}
+          onClick={logoutUser}
+          className="flex flex-col items-center justify-center w-10 h-10 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+          title="Sign Out"
         >
-          <Camera className="w-5 h-5" />
-          <span className="absolute left-16 px-2.5 py-1 text-xs font-medium text-white bg-slate-800 rounded-md shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-            {isPunchedIn ? 'Camera Punch-Out' : 'Camera Punch-In'}
-          </span>
-        </button>
-
-        {/* Smart Helper Assistant Trigger */}
-        <button
-          onClick={() => setIsAssistantOpen(!isAssistantOpen)}
-          className={`group relative flex items-center justify-center w-11 h-11 rounded-xl transition-all ${
-            isAssistantOpen
-              ? 'bg-blue-600 text-white shadow-sm shadow-blue-200'
-              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-          }`}
-          title="HRMate Smart Assistant"
-        >
-          <Bot className="w-5 h-5" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
-          <span className="absolute left-16 px-2.5 py-1 text-xs font-medium text-white bg-slate-800 rounded-md shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-            Smart Helper Assistant
-          </span>
-        </button>
-
-        {/* Divider */}
-        <div className="w-8 h-px bg-slate-200 my-1" />
-
-        {/* Role Toggle Button */}
-        <button
-          onClick={() => {
-            const nextRole = activeRole === 'admin' ? 'employee' : 'admin';
-            switchRole(nextRole);
-            if (nextRole === 'employee') {
-              setActiveModule('core');
-              setActiveSubTab('employee-ess');
-            } else {
-              setActiveModule('core');
-              setActiveSubTab('dashboard');
-            }
-          }}
-          className="group relative flex items-center justify-center w-11 h-11 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
-          title={`Switch to ${activeRole === 'admin' ? 'Employee View' : 'Admin View'}`}
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          <span className="absolute left-16 px-2.5 py-1 text-xs font-medium text-white bg-slate-800 rounded-md shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-            Switch: {activeRole === 'admin' ? 'Admin → Employee' : 'Employee → Admin'}
-          </span>
-        </button>
-
-        {/* User Avatar & Login Modal Trigger */}
-        <button
-          onClick={onOpenAuthModal}
-          className="group relative flex items-center justify-center w-10 h-10 rounded-full overflow-hidden border-2 border-slate-200 hover:border-orange-500 transition-all"
-          title="Account & Company Login"
-        >
-          <img
-            src={currentUser.avatar}
-            alt={currentUser.name}
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <span className="absolute left-16 px-2.5 py-1 text-xs font-medium text-white bg-slate-800 rounded-md shadow-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-            {currentUser.name} ({activeRole.toUpperCase()})
-          </span>
+          <LogOut className="w-4 h-4" />
+          <span className="text-[8px] font-semibold mt-0.5">Exit</span>
         </button>
       </div>
     </aside>

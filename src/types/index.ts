@@ -10,6 +10,7 @@ export interface UserSession {
   department?: string;
   designation?: string;
   employeeId?: string;
+  password?: string;
 }
 
 export interface Company {
@@ -33,6 +34,7 @@ export interface Employee {
   firstName: string;
   lastName: string;
   email: string;
+  password?: string;
   phone: string;
   avatar: string;
   department: 'Engineering' | 'Design' | 'Product' | 'Marketing' | 'Human Resources' | 'Finance' | 'Operations';
@@ -47,6 +49,12 @@ export interface Employee {
     specialAllowance: number;
     currency: string;
   };
+  bankDetails?: {
+    bankName: string;
+    accountNumber: string;
+    ifscOrRouting: string;
+    branch?: string;
+  };
   leaveBalances: {
     annual: number;
     sick: number;
@@ -59,6 +67,37 @@ export interface Employee {
     relation: string;
     phone: string;
   };
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  category: 'General' | 'Urgent' | 'Policy' | 'Event' | 'Holiday';
+  priority: 'normal' | 'high' | 'urgent';
+  authorName: string;
+  publishDate: string;
+  departmentTarget?: string;
+  pinned?: boolean;
+}
+
+export interface PayslipTemplate {
+  fontFamily: 'Plus Jakarta Sans' | 'Inter' | 'Roboto' | 'JetBrains Mono' | 'Georgia';
+  primaryColor: string;
+  headerStyle: 'banner' | 'clean' | 'two-tone' | 'corporate';
+  headerTitle: string;
+  headerSubtitle: string;
+  companyTaxNumber: string;
+  showLogo: boolean;
+  showQrCode: boolean;
+  earningsHeading: string;
+  deductionsHeading: string;
+  netPayHeading: string;
+  accountDetailsHeading: string;
+  footerNote: string;
+  showEmployerSignature: boolean;
+  signatoryTitle: string;
+  signatoryName: string;
 }
 
 export interface AttendanceRecord {
@@ -184,15 +223,17 @@ export interface ExpenseClaim {
   id: string;
   employeeId: string;
   employeeName: string;
-  title: string;
-  category: 'Travel' | 'Client Dinner' | 'Equipment' | 'Certification' | 'Wellness' | 'Other';
+  title?: string;
+  description?: string;
+  category: 'Travel' | 'Client Dinner' | 'Equipment' | 'Certification' | 'Wellness' | 'Hardware' | 'Software' | 'Client Meal' | 'Other';
   amount: number;
   currency: string;
-  expenseDate: string;
+  expenseDate?: string;
+  claimDate?: string;
   receiptName?: string;
   receiptUrl?: string;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Reimbursed';
-  notes: string;
+  notes?: string;
 }
 
 export interface BenefitPlan {
@@ -368,6 +409,8 @@ export interface PeerKudo {
   points: number;
   timestamp: string;
   likes: number;
+  likesCount?: number;
+  hasLiked?: boolean;
 }
 
 export interface CompanyAsset {

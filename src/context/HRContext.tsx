@@ -27,12 +27,16 @@ import {
   WorkflowRule,
   ApiKeyIntegration,
   UserSession,
-  UserRole
+  UserRole,
+  Announcement,
+  PayslipTemplate
 } from '../types';
 import {
   initialCompany,
   initialEmployees,
   initialSessions,
+  initialAnnouncements,
+  defaultPayslipTemplate,
   initialAttendanceRecords,
   initialLeaveRequests,
   initialTimesheets,
@@ -75,7 +79,7 @@ export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number
   return Math.round(R * c);
 }
 
-interface AssistantMessage {
+export interface AssistantMessage {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
@@ -83,27 +87,46 @@ interface AssistantMessage {
   quickActions?: { label: string; actionKey: string; payload?: any }[];
 }
 
-interface HRContextType {
-  // Auth & Session
-  currentUser: UserSession;
+export interface HRContextType {
+  // Setup & Auth
+  isSetupComplete: boolean;
+  completeInitialSetup: (
+    companyData: Partial<Company>,
+    adminData: { name: string; email: string; password?: string; designation?: string; avatar?: string }
+  ) => void;
+  currentUser: UserSession | null;
   activeRole: UserRole;
   switchUser: (userId: string) => void;
   switchRole: (role: UserRole) => void;
-  loginUser: (email: string, role: UserRole) => boolean;
+  loginUser: (email: string, password?: string, role?: UserRole) => { success: boolean; message: string };
+  logoutUser: () => void;
   registerUser: (userData: Partial<UserSession> & { companyName?: string }) => void;
   allSessions: UserSession[];
+  resetEntireSystem: () => void;
 
   // Company
   company: Company;
   updateCompany: (updates: Partial<Company>) => void;
 
-  // Employees
+  // Employees & Credentials
   employees: Employee[];
-  addEmployee: (employee: Omit<Employee, 'id' | 'employeeCode'>) => void;
+  addEmployee: (employee: Omit<Employee, 'id' | 'employeeCode'> & { password?: string }) => Employee;
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
   selectedEmployeeDetail: Employee | null;
   setSelectedEmployeeDetail: (emp: Employee | null) => void;
+
+  // Announcements
+  announcements: Announcement[];
+  addAnnouncement: (announcement: Omit<Announcement, 'id' | 'publishDate'>) => void;
+  updateAnnouncement: (id: string, updates: Partial<Announcement>) => void;
+  deleteAnnouncement: (id: string) => void;
+
+  // Payslip Customization & Template
+  payslipTemplate: PayslipTemplate;
+  updatePayslipTemplate: (updates: Partial<PayslipTemplate>) => void;
+  resetPayslipTemplate: () => void;
+  importPayslipTemplate: (jsonString: string) => boolean;
 
   // Attendance & Punch
   attendanceRecords: AttendanceRecord[];
@@ -114,7 +137,7 @@ interface HRContextType {
   userLocation: { latitude: number; longitude: number; distanceMeters: number; isWithinGeofence: boolean } | null;
   refreshLocation: () => Promise<void>;
 
-  // Leaves
+  // Leaves & Applications
   leaveRequests: LeaveRequest[];
   applyLeave: (request: Omit<LeaveRequest, 'id' | 'status' | 'appliedOn' | 'employeeId' | 'employeeName' | 'employeeAvatar' | 'department'>) => void;
   updateLeaveStatus: (leaveId: string, status: 'Approved' | 'Rejected', reason?: string) => void;
@@ -124,7 +147,7 @@ interface HRContextType {
   addTimesheet: (entry: Omit<TimesheetEntry, 'id' | 'status' | 'totalHours'>) => void;
   updateTimesheetStatus: (id: string, status: 'Approved' | 'Rejected') => void;
 
-  // Shifts & Overtime
+  // Shifts & Holidays
   shiftRosters: ShiftRoster[];
   updateShift: (rosterId: string, day: keyof ShiftRoster['shifts'], shiftValue: string) => void;
   holidays: Holiday[];
@@ -204,32 +227,109 @@ interface HRContextType {
 
 const HRContext = createContext<HRContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'hrmate_data_v1';
+// Storage helper functions
+const getStored = <T,>(key: string, fallback: T): T => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const setStored = <T,>(key: string, value: T) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.warn(`Failed to save ${key} to localStorage:`, err);
+  }
+};
 
 export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Company & Sessions
-  const [company, setCompany] = useState<Company>(initialCompany);
-  const [allSessions, setAllSessions] = useState<UserSession[]>(initialSessions);
-  const [currentUser, setCurrentUser] = useState<UserSession>(initialSessions[0]);
-  const [activeRole, setActiveRole] = useState<UserRole>('admin');
+  // Check if setup was previously completed
+  const [isSetupComplete, setIsSetupComplete] = useState<boolean>(() => {
+    return getStored<boolean>('hrmate_setup_complete_v2', false);
+  });
+
+  // Company state
+  const [company, setCompany] = useState<Company>(() => {
+    return getStored<Company>('hrmate_company_v2', initialCompany);
+  });
+
+  // User Sessions & Current User
+  const [allSessions, setAllSessions] = useState<UserSession[]>(() => {
+    return getStored<UserSession[]>('hrmate_sessions_v2', initialSessions);
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
+    const stored = getStored<UserSession | null>('hrmate_current_user_v2', null);
+    if (stored) return stored;
+    return null;
+  });
+
+  const [activeRole, setActiveRole] = useState<UserRole>(() => {
+    return currentUser?.role || 'admin';
+  });
 
   // Navigation state
   const [activeModule, setActiveModule] = useState<'core' | 'attendance' | 'payroll' | 'talent' | 'performance' | 'settings'>('core');
-  const [activeSubTab, setActiveSubTab] = useState<string>('dashboard');
+  const [activeSubTab, setActiveSubTab] = useState<string>(activeRole === 'admin' ? 'dashboard' : 'employee-ess');
 
   // Modals & Details
   const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<Employee | null>(null);
   const [isPunchModalOpen, setIsPunchModalOpen] = useState(false);
 
-  // Entities
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(initialAttendanceRecords);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
-  const [timesheets, setTimesheets] = useState<TimesheetEntry[]>(initialTimesheets);
-  const [shiftRosters, setShiftRosters] = useState<ShiftRoster[]>(initialShiftRosters);
-  const [holidays, setHolidays] = useState<Holiday[]>(initialHolidays);
-  const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(initialPayrollRuns);
-  const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(initialExpenseClaims);
+  // Employees
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    return getStored<Employee[]>('hrmate_employees_v2', initialEmployees);
+  });
+
+  // Announcements
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
+    return getStored<Announcement[]>('hrmate_announcements_v2', initialAnnouncements);
+  });
+
+  // Payslip Template
+  const [payslipTemplate, setPayslipTemplate] = useState<PayslipTemplate>(() => {
+    return getStored<PayslipTemplate>('hrmate_payslip_template_v2', defaultPayslipTemplate);
+  });
+
+  // Attendance Records
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
+    return getStored<AttendanceRecord[]>('hrmate_attendance_v2', initialAttendanceRecords);
+  });
+
+  // Leave Requests (Employee applications)
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() => {
+    return getStored<LeaveRequest[]>('hrmate_leaves_v2', initialLeaveRequests);
+  });
+
+  // Timesheets
+  const [timesheets, setTimesheets] = useState<TimesheetEntry[]>(() => {
+    return getStored<TimesheetEntry[]>('hrmate_timesheets_v2', initialTimesheets);
+  });
+
+  // Shift Rosters
+  const [shiftRosters, setShiftRosters] = useState<ShiftRoster[]>(() => {
+    return getStored<ShiftRoster[]>('hrmate_shifts_v2', initialShiftRosters);
+  });
+
+  // Holidays
+  const [holidays, setHolidays] = useState<Holiday[]>(() => {
+    return getStored<Holiday[]>('hrmate_holidays_v2', initialHolidays);
+  });
+
+  // Payroll Runs
+  const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(() => {
+    return getStored<PayrollRun[]>('hrmate_payroll_runs_v2', initialPayrollRuns);
+  });
+
+  // Expense Claims
+  const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(() => {
+    return getStored<ExpenseClaim[]>('hrmate_expenses_v2', initialExpenseClaims);
+  });
+
+  // Other entities
   const [benefitPlans, setBenefitPlans] = useState<BenefitPlan[]>(initialBenefitPlans);
   const [candidates, setCandidates] = useState<Candidate[]>(initialCandidates);
   const [interviews, setInterviews] = useState<InterviewSession[]>(initialInterviews);
@@ -248,8 +348,53 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [workflows, setWorkflows] = useState<WorkflowRule[]>(initialWorkflows);
   const [apiKeys] = useState<ApiKeyIntegration[]>(initialApiKeys);
 
+  // Sync to localStorage
+  useEffect(() => {
+    setStored('hrmate_setup_complete_v2', isSetupComplete);
+  }, [isSetupComplete]);
+
+  useEffect(() => {
+    setStored('hrmate_company_v2', company);
+  }, [company]);
+
+  useEffect(() => {
+    setStored('hrmate_sessions_v2', allSessions);
+  }, [allSessions]);
+
+  useEffect(() => {
+    setStored('hrmate_current_user_v2', currentUser);
+  }, [currentUser]);
+
+  useEffect(() => {
+    setStored('hrmate_employees_v2', employees);
+  }, [employees]);
+
+  useEffect(() => {
+    setStored('hrmate_announcements_v2', announcements);
+  }, [announcements]);
+
+  useEffect(() => {
+    setStored('hrmate_payslip_template_v2', payslipTemplate);
+  }, [payslipTemplate]);
+
+  useEffect(() => {
+    setStored('hrmate_attendance_v2', attendanceRecords);
+  }, [attendanceRecords]);
+
+  useEffect(() => {
+    setStored('hrmate_leaves_v2', leaveRequests);
+  }, [leaveRequests]);
+
+  useEffect(() => {
+    setStored('hrmate_expenses_v2', expenseClaims);
+  }, [expenseClaims]);
+
+  useEffect(() => {
+    setStored('hrmate_payroll_runs_v2', payrollRuns);
+  }, [payrollRuns]);
+
   // Currency
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
+  const [selectedCurrency, setSelectedCurrency] = useState<string>(company.currency || 'USD');
   const currencyRates: Record<string, number> = {
     USD: 1.0,
     EUR: 0.92,
@@ -257,6 +402,8 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     JPY: 153.4,
     INR: 84.1,
     AED: 3.67,
+    CAD: 1.38,
+    AUD: 1.51,
   };
 
   // Location Geofence state
@@ -271,8 +418,8 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const refreshLocation = async () => {
     if (!navigator.geolocation) {
       setUserLocation({
-        latitude: initialCompany.hqLocation.latitude,
-        longitude: initialCompany.hqLocation.longitude,
+        latitude: company.hqLocation.latitude,
+        longitude: company.hqLocation.longitude,
         distanceMeters: 15,
         isWithinGeofence: true,
       });
@@ -295,7 +442,6 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         });
       },
       (err) => {
-        // Fallback for iframe / denied permission to simulate within office HQ
         console.warn('Geolocation unavailable, defaulting to HQ coordinates:', err.message);
         setUserLocation({
           latitude: company.hqLocation.latitude,
@@ -313,18 +459,19 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [company]);
 
   // Current user's attendance for today
-  const todayStr = '2026-10-29';
+  const todayStr = new Date().toISOString().split('T')[0];
   const currentAttendanceRecord =
     attendanceRecords.find(
-      (rec) => rec.employeeId === (currentUser.employeeId || 'emp_01') && rec.date === todayStr
+      (rec) => rec.employeeId === (currentUser?.employeeId || currentUser?.id || 'emp_01') && rec.date === todayStr
     ) || null;
 
   const isPunchedIn = Boolean(currentAttendanceRecord && !currentAttendanceRecord.punchOutTime);
 
   // Punch actions
   const punchIn = (photoDataUrl: string, coords?: { latitude: number; longitude: number; accuracy?: number }) => {
-    const empId = currentUser.employeeId || 'emp_01';
-    const emp = employees.find((e) => e.id === empId) || employees[0];
+    const empId = currentUser?.employeeId || currentUser?.id || 'emp_01';
+    const emp = employees.find((e) => e.id === empId);
+    const empName = emp ? `${emp.firstName} ${emp.lastName}` : (currentUser?.name || 'Staff Member');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -337,8 +484,8 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     const newRecord: AttendanceRecord = {
       id: `att_${Date.now()}`,
-      employeeId: emp.id,
-      employeeName: `${emp.firstName} ${emp.lastName}`,
+      employeeId: empId,
+      employeeName: empName,
       date: todayStr,
       punchInTime: timeStr,
       punchInPhoto: photoDataUrl,
@@ -349,12 +496,12 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       notes: 'Live Camera & Geofence Verified',
     };
 
-    setAttendanceRecords((prev) => [newRecord, ...prev.filter((r) => !(r.employeeId === emp.id && r.date === todayStr))]);
+    setAttendanceRecords((prev) => [newRecord, ...prev.filter((r) => !(r.employeeId === empId && r.date === todayStr))]);
     return { success: true, message: `Successfully punched in at ${timeStr}` };
   };
 
   const punchOut = (photoDataUrl: string) => {
-    const empId = currentUser.employeeId || 'emp_01';
+    const empId = currentUser?.employeeId || currentUser?.id || 'emp_01';
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -374,44 +521,178 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     return { success: true, message: `Successfully punched out at ${timeStr}` };
   };
 
+  // Complete Initial Onboarding Setup
+  const completeInitialSetup = (
+    companyData: Partial<Company>,
+    adminData: { name: string; email: string; password?: string; designation?: string; avatar?: string }
+  ) => {
+    const compId = `comp_${Date.now()}`;
+    const newCompany: Company = {
+      id: compId,
+      name: companyData.name || 'Acme Global Enterprises',
+      logo: companyData.logo || 'HRMate',
+      industry: companyData.industry || 'Technology & Innovation',
+      currency: companyData.currency || 'USD',
+      timezone: companyData.timezone || 'America/New_York (EST)',
+      hqLocation: companyData.hqLocation || {
+        name: 'Corporate Headquarters',
+        latitude: 37.7749,
+        longitude: -122.4194,
+        radiusMeters: 250,
+      },
+    };
+
+    const adminSessionId = `admin_${Date.now()}`;
+    const adminSession: UserSession = {
+      id: adminSessionId,
+      name: adminData.name,
+      email: adminData.email.toLowerCase().trim(),
+      role: 'admin',
+      avatar:
+        adminData.avatar ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      companyId: compId,
+      designation: adminData.designation || 'Master Administrator',
+      department: 'Executive Management',
+      password: adminData.password || 'admin123',
+    };
+
+    const initialWelcomeAnnouncement: Announcement = {
+      id: `ann_${Date.now()}`,
+      title: `Welcome to ${newCompany.name} Enterprise HRMS`,
+      content: `Welcome to our unified People Operations & Attendance Platform. From here, employees can complete biometric check-ins, request time off, and access authenticated payslips. Administrators can onboard employees, review applications, and broadcast organization-wide updates.`,
+      category: 'General',
+      priority: 'high',
+      authorName: adminData.name,
+      publishDate: todayStr,
+      departmentTarget: 'All',
+      pinned: true,
+    };
+
+    setCompany(newCompany);
+    setAllSessions([adminSession]);
+    setCurrentUser(adminSession);
+    setActiveRole('admin');
+    setAnnouncements([initialWelcomeAnnouncement]);
+    setIsSetupComplete(true);
+    setActiveModule('core');
+    setActiveSubTab('dashboard');
+
+    setStored('hrmate_company_v2', newCompany);
+    setStored('hrmate_sessions_v2', [adminSession]);
+    setStored('hrmate_current_user_v2', adminSession);
+    setStored('hrmate_announcements_v2', [initialWelcomeAnnouncement]);
+    setStored('hrmate_setup_complete_v2', true);
+  };
+
   // Auth methods
   const switchUser = (userId: string) => {
     const session = allSessions.find((s) => s.id === userId);
     if (session) {
       setCurrentUser(session);
       setActiveRole(session.role);
+      setActiveSubTab(session.role === 'admin' ? 'dashboard' : 'employee-ess');
     }
   };
 
   const switchRole = (role: UserRole) => {
     setActiveRole(role);
-    setCurrentUser((prev) => ({ ...prev, role }));
+    if (currentUser) {
+      const updated = { ...currentUser, role };
+      setCurrentUser(updated);
+    }
+    setActiveSubTab(role === 'admin' ? 'dashboard' : 'employee-ess');
   };
 
-  const loginUser = (email: string, role: UserRole): boolean => {
-    const found = allSessions.find((s) => s.email.toLowerCase() === email.toLowerCase());
-    if (found) {
-      setCurrentUser(found);
-      setActiveRole(role);
-      return true;
+  // User Login (Validates against admin credentials or employee database)
+  const loginUser = (email: string, password?: string, preferredRole?: UserRole): { success: boolean; message: string } => {
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanPass = password?.trim();
+
+    // 1. Check if user is an existing registered Admin
+    const adminSession = allSessions.find(
+      (s) => s.email.toLowerCase() === cleanEmail && (s.role === 'admin' || s.role === 'company_owner')
+    );
+
+    if (preferredRole === 'admin' || (!preferredRole && adminSession)) {
+      if (!adminSession) {
+        return { success: false, message: 'No administrator account found with this email address.' };
+      }
+      if (adminSession.password && cleanPass && adminSession.password !== cleanPass) {
+        return { success: false, message: 'Invalid administrator password. Please check your credentials.' };
+      }
+      setCurrentUser(adminSession);
+      setActiveRole('admin');
+      setActiveModule('core');
+      setActiveSubTab('dashboard');
+      return { success: true, message: `Welcome back, Administrator ${adminSession.name}!` };
     }
-    // Auto-create or link with employee
-    const matchedEmp = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
-    const newSession: UserSession = {
-      id: `user_${Date.now()}`,
-      name: matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName}` : email.split('@')[0],
-      email,
-      role,
-      avatar: matchedEmp ? matchedEmp.avatar : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      companyId: company.id,
-      department: matchedEmp ? matchedEmp.department : 'Operations',
-      designation: matchedEmp ? matchedEmp.designation : 'Team Member',
-      employeeId: matchedEmp ? matchedEmp.id : undefined,
-    };
-    setAllSessions((prev) => [...prev, newSession]);
-    setCurrentUser(newSession);
-    setActiveRole(role);
-    return true;
+
+    // 2. Check if user is an employee in the system (created by Admin)
+    const emp = employees.find((e) => e.email.toLowerCase() === cleanEmail);
+    if (!emp) {
+      // Check allSessions for employee
+      const empSession = allSessions.find((s) => s.email.toLowerCase() === cleanEmail && s.role === 'employee');
+      if (empSession) {
+        if (empSession.password && cleanPass && empSession.password !== cleanPass) {
+          return { success: false, message: 'Incorrect employee password. Please check credentials provided by Admin.' };
+        }
+        setCurrentUser(empSession);
+        setActiveRole('employee');
+        setActiveModule('core');
+        setActiveSubTab('employee-ess');
+        return { success: true, message: `Welcome back, ${empSession.name}!` };
+      }
+      return {
+        success: false,
+        message: 'No employee record found for this email. Please ask your company administrator to onboard you.',
+      };
+    }
+
+    // Check employee password
+    if (emp.password && cleanPass && emp.password !== cleanPass) {
+      return { success: false, message: 'Incorrect password. Please enter the password given to you by your Administrator.' };
+    }
+
+    // Find or create session for this employee
+    let session = allSessions.find((s) => s.employeeId === emp.id || s.email.toLowerCase() === cleanEmail);
+    if (!session) {
+      session = {
+        id: `user_emp_${emp.id}`,
+        name: `${emp.firstName} ${emp.lastName}`,
+        email: emp.email,
+        role: 'employee',
+        avatar: emp.avatar,
+        companyId: company.id,
+        department: emp.department,
+        designation: emp.designation,
+        employeeId: emp.id,
+        password: emp.password,
+      };
+      setAllSessions((prev) => [...prev, session!]);
+    } else {
+      // Sync latest employee name and avatar in session
+      session = {
+        ...session,
+        name: `${emp.firstName} ${emp.lastName}`,
+        avatar: emp.avatar,
+        department: emp.department,
+        designation: emp.designation,
+        password: emp.password || session.password,
+      };
+      setAllSessions((prev) => prev.map((s) => (s.id === session!.id ? session! : s)));
+    }
+
+    setCurrentUser(session);
+    setActiveRole('employee');
+    setActiveModule('core');
+    setActiveSubTab('employee-ess');
+    return { success: true, message: `Welcome to ${company.name}, ${emp.firstName}!` };
+  };
+
+  const logoutUser = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('hrmate_current_user_v2');
   };
 
   const registerUser = (userData: Partial<UserSession> & { companyName?: string }) => {
@@ -421,12 +702,15 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const newSession: UserSession = {
       id: `user_${Date.now()}`,
       name: userData.name || 'New Member',
-      email: userData.email || 'user@acme.io',
+      email: userData.email || 'user@example.com',
       role: userData.role || 'employee',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      avatar:
+        userData.avatar ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
       companyId: company.id,
       department: userData.department || 'Operations',
       designation: userData.designation || 'Specialist',
+      password: userData.password,
     };
     setAllSessions((prev) => [...prev, newSession]);
     setCurrentUser(newSession);
@@ -437,41 +721,251 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setCompany((prev) => ({ ...prev, ...updates }));
   };
 
-  // Employee CRUD
-  const addEmployee = (empData: Omit<Employee, 'id' | 'employeeCode'>) => {
-    const nextCodeNum = 1000 + employees.length + 1;
-    const newEmp: Employee = {
-      ...empData,
-      id: `emp_${Date.now()}`,
-      employeeCode: `EMP-${nextCodeNum}`,
-    };
-    setEmployees((prev) => [newEmp, ...prev]);
+  // Reset entire system to first-time setup
+  const resetEntireSystem = () => {
+    localStorage.clear();
+    setCompany(initialCompany);
+    setAllSessions([]);
+    setCurrentUser(null);
+    setEmployees([]);
+    setAnnouncements([]);
+    setAttendanceRecords([]);
+    setLeaveRequests([]);
+    setTimesheets([]);
+    setPayrollRuns([]);
+    setExpenseClaims([]);
+    setIsSetupComplete(false);
   };
 
+  // Employee CRUD with automatic credential generation and live sync
+  const addEmployee = (empData: Omit<Employee, 'id' | 'employeeCode'> & { password?: string }): Employee => {
+    const nextCodeNum = 1000 + employees.length + 1;
+    const empId = `emp_${Date.now()}`;
+    const cleanPassword = empData.password?.trim() || 'Welcome@123';
+
+    const newEmp: Employee = {
+      ...empData,
+      id: empId,
+      employeeCode: `EMP-${nextCodeNum}`,
+      password: cleanPassword,
+      bankDetails: empData.bankDetails || {
+        bankName: 'Standard Chartered Bank',
+        accountNumber: `•••• •••• ${Math.floor(1000 + Math.random() * 9000)}`,
+        ifscOrRouting: 'SCBL0001290',
+        branch: 'Corporate Finance Hub',
+      },
+    };
+
+    // Also automatically create their login UserSession
+    const empSession: UserSession = {
+      id: `session_${empId}`,
+      name: `${newEmp.firstName} ${newEmp.lastName}`,
+      email: newEmp.email.toLowerCase().trim(),
+      role: 'employee',
+      avatar: newEmp.avatar,
+      companyId: company.id,
+      department: newEmp.department,
+      designation: newEmp.designation,
+      employeeId: empId,
+      password: cleanPassword,
+    };
+
+    // Auto-generate an initial payslip run voucher for this employee
+    const initialRun: PayrollRun = {
+      id: `run_${empId}`,
+      period: 'October 2026',
+      employeeId: empId,
+      employeeName: `${newEmp.firstName} ${newEmp.lastName}`,
+      department: newEmp.department,
+      designation: newEmp.designation,
+      basicSalary: newEmp.salary.baseMonthly,
+      hra: newEmp.salary.hra,
+      allowances: newEmp.salary.specialAllowance,
+      statutoryTax: Math.round(newEmp.salary.baseMonthly * 0.12),
+      providentFund: Math.round(newEmp.salary.baseMonthly * 0.05),
+      benefitsDeduction: 120,
+      reimbursements: 0,
+      grossSalary: newEmp.salary.baseMonthly + newEmp.salary.hra + newEmp.salary.specialAllowance,
+      netPayable:
+        newEmp.salary.baseMonthly +
+        newEmp.salary.hra +
+        newEmp.salary.specialAllowance -
+        (Math.round(newEmp.salary.baseMonthly * 0.12) + Math.round(newEmp.salary.baseMonthly * 0.05) + 120),
+      paymentStatus: 'Paid',
+      disbursedDate: todayStr,
+      bankAccount: newEmp.bankDetails?.accountNumber || '•••• •••• 4092',
+    };
+
+    setEmployees((prev) => [newEmp, ...prev]);
+    setAllSessions((prev) => [...prev, empSession]);
+    setPayrollRuns((prev) => [initialRun, ...prev]);
+
+    return newEmp;
+  };
+
+  // Update employee (Crucial: syncs changes both ways! If employee updates profile, Admin data changes; if admin updates employee, employee session reflects it)
   const updateEmployee = (id: string, updates: Partial<Employee>) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+    setEmployees((prev) =>
+      prev.map((e) => {
+        if (e.id === id) {
+          const updated = { ...e, ...updates };
+          return updated;
+        }
+        return e;
+      })
+    );
+
+    // If selected employee is currently open in drawer/modal, sync it
     if (selectedEmployeeDetail && selectedEmployeeDetail.id === id) {
       setSelectedEmployeeDetail((prev) => (prev ? { ...prev, ...updates } : null));
+    }
+
+    // Sync UserSession and currentUser if it matches this employee
+    setAllSessions((prev) =>
+      prev.map((s) => {
+        if (s.employeeId === id || (updates.email && s.email.toLowerCase() === updates.email.toLowerCase())) {
+          return {
+            ...s,
+            name:
+              updates.firstName && updates.lastName
+                ? `${updates.firstName} ${updates.lastName}`
+                : updates.firstName
+                ? `${updates.firstName} ${s.name.split(' ')[1] || ''}`
+                : s.name,
+            email: updates.email || s.email,
+            avatar: updates.avatar || s.avatar,
+            department: updates.department || s.department,
+            designation: updates.designation || s.designation,
+            password: updates.password !== undefined ? updates.password : s.password,
+          };
+        }
+        return s;
+      })
+    );
+
+    if (currentUser && (currentUser.employeeId === id || (updates.email && currentUser.email.toLowerCase() === updates.email.toLowerCase()))) {
+      setCurrentUser((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          name:
+            updates.firstName && updates.lastName
+              ? `${updates.firstName} ${updates.lastName}`
+              : updates.firstName
+              ? `${updates.firstName} ${prev.name.split(' ')[1] || ''}`
+              : prev.name,
+          email: updates.email || prev.email,
+          avatar: updates.avatar || prev.avatar,
+          department: updates.department || prev.department,
+          designation: updates.designation || prev.designation,
+          password: updates.password !== undefined ? updates.password : prev.password,
+        };
+      });
+    }
+
+    // Sync employee names in payroll runs, attendance records, and leave requests
+    if (updates.firstName || updates.lastName || updates.department || updates.designation) {
+      const emp = employees.find((e) => e.id === id);
+      const newFullName = `${updates.firstName || emp?.firstName || ''} ${updates.lastName || emp?.lastName || ''}`.trim();
+
+      setLeaveRequests((prev) =>
+        prev.map((l) =>
+          l.employeeId === id
+            ? {
+                ...l,
+                employeeName: newFullName || l.employeeName,
+                employeeAvatar: updates.avatar || l.employeeAvatar,
+                department: updates.department || l.department,
+              }
+            : l
+        )
+      );
+
+      setAttendanceRecords((prev) =>
+        prev.map((a) => (a.employeeId === id ? { ...a, employeeName: newFullName || a.employeeName } : a))
+      );
+
+      setPayrollRuns((prev) =>
+        prev.map((p) =>
+          p.employeeId === id
+            ? {
+                ...p,
+                employeeName: newFullName || p.employeeName,
+                department: updates.department || p.department,
+                designation: updates.designation || p.designation,
+                basicSalary: updates.salary?.baseMonthly ?? p.basicSalary,
+                hra: updates.salary?.hra ?? p.hra,
+                allowances: updates.salary?.specialAllowance ?? p.allowances,
+                bankAccount: updates.bankDetails?.accountNumber ?? p.bankAccount,
+              }
+            : p
+        )
+      );
     }
   };
 
   const deleteEmployee = (id: string) => {
     setEmployees((prev) => prev.filter((e) => e.id !== id));
+    setAllSessions((prev) => prev.filter((s) => s.employeeId !== id));
     if (selectedEmployeeDetail?.id === id) {
       setSelectedEmployeeDetail(null);
+    }
+    if (currentUser?.employeeId === id) {
+      logoutUser();
+    }
+  };
+
+  // Announcements CRUD
+  const addAnnouncement = (ann: Omit<Announcement, 'id' | 'publishDate'>) => {
+    const newAnn: Announcement = {
+      ...ann,
+      id: `ann_${Date.now()}`,
+      publishDate: todayStr,
+      authorName: currentUser?.name || 'Administrator',
+    };
+    setAnnouncements((prev) => [newAnn, ...prev]);
+  };
+
+  const updateAnnouncement = (id: string, updates: Partial<Announcement>) => {
+    setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, ...updates } : a)));
+  };
+
+  const deleteAnnouncement = (id: string) => {
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  // Payslip Template Customization
+  const updatePayslipTemplate = (updates: Partial<PayslipTemplate>) => {
+    setPayslipTemplate((prev) => ({ ...prev, ...updates }));
+  };
+
+  const resetPayslipTemplate = () => {
+    setPayslipTemplate(defaultPayslipTemplate);
+  };
+
+  const importPayslipTemplate = (jsonString: string): boolean => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (typeof parsed === 'object' && parsed.headerTitle) {
+        setPayslipTemplate((prev) => ({ ...prev, ...parsed }));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
     }
   };
 
   // Leave Actions
   const applyLeave = (requestData: Omit<LeaveRequest, 'id' | 'status' | 'appliedOn' | 'employeeId' | 'employeeName' | 'employeeAvatar' | 'department'>) => {
-    const emp = employees.find((e) => e.id === (currentUser.employeeId || 'emp_02')) || employees[1];
+    const emp = employees.find((e) => e.id === currentUser?.employeeId) || employees[0];
     const newLeave: LeaveRequest = {
       ...requestData,
       id: `leave_${Date.now()}`,
-      employeeId: emp.id,
-      employeeName: `${emp.firstName} ${emp.lastName}`,
-      employeeAvatar: emp.avatar,
-      department: emp.department,
+      employeeId: emp ? emp.id : (currentUser?.id || 'emp_01'),
+      employeeName: emp ? `${emp.firstName} ${emp.lastName}` : (currentUser?.name || 'Staff Member'),
+      employeeAvatar: emp ? emp.avatar : (currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'),
+      department: emp ? emp.department : (currentUser?.department || 'Operations'),
       status: 'Pending',
       appliedOn: todayStr,
     };
@@ -482,7 +976,6 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setLeaveRequests((prev) =>
       prev.map((l) => {
         if (l.id === leaveId) {
-          // If approved, decrement balance
           if (status === 'Approved' && l.status !== 'Approved') {
             const leaveTypeKey = l.type.toLowerCase() as keyof Employee['leaveBalances'];
             setEmployees((empList) =>
@@ -503,7 +996,7 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return {
             ...l,
             status,
-            approvedBy: status === 'Approved' ? currentUser.name : undefined,
+            approvedBy: status === 'Approved' ? (currentUser?.name || 'Administrator') : undefined,
             rejectionReason: reason,
           };
         }
@@ -518,8 +1011,8 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const newTs: TimesheetEntry = {
       ...entry,
       id: `ts_${Date.now()}`,
-      status: 'Submitted',
       totalHours: total,
+      status: 'Submitted',
     };
     setTimesheets((prev) => [newTs, ...prev]);
   };
@@ -528,90 +1021,73 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setTimesheets((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
   };
 
-  // Shifts
+  // Shifts & Holidays
   const updateShift = (rosterId: string, day: keyof ShiftRoster['shifts'], shiftValue: string) => {
     setShiftRosters((prev) =>
-      prev.map((r) => {
-        if (r.id === rosterId) {
-          return {
-            ...r,
-            shifts: {
-              ...r.shifts,
-              [day]: shiftValue,
-            },
-          };
-        }
-        return r;
-      })
+      prev.map((r) => (r.id === rosterId ? { ...r, shifts: { ...r.shifts, [day]: shiftValue } } : r))
     );
   };
 
   const addHoliday = (holiday: Omit<Holiday, 'id'>) => {
-    setHolidays((prev) => [...prev, { ...holiday, id: `hol_${Date.now()}` }]);
+    setHolidays((prev) => [{ ...holiday, id: `hol_${Date.now()}` }, ...prev]);
   };
 
-  // Payroll
+  // Payroll & Expenses
   const processPayrollRun = () => {
-    const newPayrollList: PayrollRun[] = employees.map((emp) => {
-      const gross = emp.salary.baseMonthly + emp.salary.hra + emp.salary.specialAllowance;
-      const tax = Math.round(gross * 0.18);
-      const pf = Math.round(emp.salary.baseMonthly * 0.07);
-      const ben = 300;
-      const net = gross - tax - pf - ben;
+    const newRuns: PayrollRun[] = employees.map((emp) => {
+      const basic = emp.salary.baseMonthly;
+      const hra = emp.salary.hra;
+      const allow = emp.salary.specialAllowance;
+      const tax = Math.round(basic * 0.12);
+      const pf = Math.round(basic * 0.05);
+      const ben = 120;
+      const gross = basic + hra + allow;
+      const net = gross - (tax + pf + ben);
+
       return {
-        id: `pay_${Date.now()}_${emp.id}`,
+        id: `run_${emp.id}_${Date.now()}`,
         period: 'November 2026',
         employeeId: emp.id,
         employeeName: `${emp.firstName} ${emp.lastName}`,
         department: emp.department,
         designation: emp.designation,
-        grossSalary: gross,
-        basicSalary: emp.salary.baseMonthly,
-        hra: emp.salary.hra,
-        allowances: emp.salary.specialAllowance,
+        basicSalary: basic,
+        hra,
+        allowances: allow,
         statutoryTax: tax,
         providentFund: pf,
         benefitsDeduction: ben,
         reimbursements: 0,
+        grossSalary: gross,
         netPayable: net,
         paymentStatus: 'Paid',
         disbursedDate: todayStr,
-        bankAccount: 'Direct Deposit Linked',
+        bankAccount: emp.bankDetails?.accountNumber || '•••• •••• 5590',
       };
     });
-    setPayrollRuns((prev) => [...newPayrollList, ...prev]);
+
+    setPayrollRuns(newRuns);
   };
 
-  // Expenses
   const addExpenseClaim = (claim: Omit<ExpenseClaim, 'id' | 'status' | 'employeeId' | 'employeeName'>) => {
-    const emp = employees.find((e) => e.id === currentUser.employeeId) || employees[0];
+    const emp = employees.find((e) => e.id === currentUser?.employeeId) || employees[0];
     const newClaim: ExpenseClaim = {
       ...claim,
       id: `exp_${Date.now()}`,
-      employeeId: emp ? emp.id : (currentUser.employeeId || 'emp_user'),
-      employeeName: emp ? `${emp.firstName} ${emp.lastName}` : currentUser.name,
+      employeeId: emp ? emp.id : (currentUser?.id || 'emp_01'),
+      employeeName: emp ? `${emp.firstName} ${emp.lastName}` : (currentUser?.name || 'Staff Member'),
       status: 'Pending',
     };
     setExpenseClaims((prev) => [newClaim, ...prev]);
   };
 
   const updateExpenseStatus = (id: string, status: 'Approved' | 'Rejected' | 'Reimbursed') => {
-    setExpenseClaims((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
+    setExpenseClaims((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
   };
 
   const toggleBenefitEnrollment = (planId: string) => {
     setBenefitPlans((prev) =>
-      prev.map((b) => {
-        if (b.id === planId) {
-          const nextEnrolled = !b.isEnrolled;
-          return {
-            ...b,
-            isEnrolled: nextEnrolled,
-            enrolledCount: nextEnrolled ? b.enrolledCount + 1 : Math.max(0, b.enrolledCount - 1),
-          };
-        }
-        return b;
-      })
+      prev.map((b) => (b.id === planId ? { ...b, isEnrolled: !b.isEnrolled, enrolledCount: b.isEnrolled ? b.enrolledCount - 1 : b.enrolledCount + 1 } : b))
     );
   };
 
@@ -620,41 +1096,25 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, stage } : c)));
   };
 
-  const addCandidate = (candidateData: Omit<Candidate, 'id' | 'appliedDate'>) => {
-    const newCand: Candidate = {
-      ...candidateData,
-      id: `cand_${Date.now()}`,
-      appliedDate: todayStr,
-    };
-    setCandidates((prev) => [newCand, ...prev]);
+  const addCandidate = (candidate: Omit<Candidate, 'id' | 'appliedDate'>) => {
+    setCandidates((prev) => [{ ...candidate, id: `cand_${Date.now()}`, appliedDate: todayStr }, ...prev]);
   };
 
-  const scheduleInterview = (interviewData: Omit<InterviewSession, 'id' | 'status'>) => {
-    const newInt: InterviewSession = {
-      ...interviewData,
-      id: `int_${Date.now()}`,
-      status: 'Scheduled',
-    };
-    setInterviews((prev) => [newInt, ...prev]);
+  const scheduleInterview = (interview: Omit<InterviewSession, 'id' | 'status'>) => {
+    setInterviews((prev) => [{ ...interview, id: `int_${Date.now()}`, status: 'Scheduled' }, ...prev]);
   };
 
   const toggleOnboardingTask = (taskId: string) => {
-    setOnboardingTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t))
-    );
+    setOnboardingTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t)));
   };
 
   const updateOffboardingStatus = (id: string, updates: Partial<OffboardingRecord>) => {
     setOffboardingRecords((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)));
   };
 
-  // Performance
+  // Performance & Culture
   const addGoalOKR = (goal: Omit<GoalOKR, 'id'>) => {
-    const newGoal: GoalOKR = {
-      ...goal,
-      id: `okr_${Date.now()}`,
-    };
-    setGoalsOKR((prev) => [newGoal, ...prev]);
+    setGoalsOKR((prev) => [{ ...goal, id: `okr_${Date.now()}` }, ...prev]);
   };
 
   const updateGoalProgress = (goalId: string, newProgress: number) => {
@@ -662,80 +1122,84 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const addAppraisal = (review: Omit<AppraisalReview, 'id'>) => {
-    const newReview: AppraisalReview = {
-      ...review,
-      id: `appr_${Date.now()}`,
-    };
-    setAppraisals((prev) => [newReview, ...prev]);
-  };
-
-  const addSuccessionPlan = (plan: Omit<SuccessionPlan, 'id'>) => {
-    const newPlan: SuccessionPlan = {
-      ...plan,
-      id: `succ_${Date.now()}`,
-    };
-    setSuccessionPlans((prev) => [newPlan, ...prev]);
+    setAppraisals((prev) => [{ ...review, id: `appr_${Date.now()}` }, ...prev]);
   };
 
   const toggleCourseEnrollment = (courseId: string) => {
-    setCourses((prev) =>
-      prev.map((c) => (c.id === courseId ? { ...c, isEnrolled: !c.isEnrolled } : c))
-    );
+    setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, isEnrolled: !c.isEnrolled } : c)));
   };
 
   const updateCourseProgress = (courseId: string, percent: number) => {
-    setCourses((prev) =>
-      prev.map((c) =>
-        c.id === courseId ? { ...c, progressPercent: percent, isEnrolled: true } : c
-      )
-    );
+    setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, progressPercent: percent } : c)));
+  };
+
+  const addSuccessionPlan = (plan: Omit<SuccessionPlan, 'id'>) => {
+    setSuccessionPlans((prev) => [{ ...plan, id: `succ_${Date.now()}` }, ...prev]);
   };
 
   const votePulseSurvey = (optionLabel: string) => {
     setPulseSurvey((prev) => {
-      const updatedOptions = prev.options.map((opt) => {
+      const updatedOpts = prev.options.map((opt) => {
         if (opt.label === optionLabel) {
           return { ...opt, count: opt.count + 1 };
         }
         return opt;
       });
       const newTotal = prev.totalVotes + 1;
-      const withPercents = updatedOptions.map((opt) => ({
-        ...opt,
-        percentage: Math.round((opt.count / newTotal) * 100),
+      const calculatedOpts = updatedOpts.map((o) => ({
+        ...o,
+        percentage: Math.round((o.count / newTotal) * 100),
       }));
       return {
         ...prev,
         totalVotes: newTotal,
-        options: withPercents,
+        options: calculatedOpts,
         userVotedOption: optionLabel,
       };
     });
   };
 
   const sendPeerKudo = (toEmployeeId: string, badge: PeerKudo['badge'], message: string, points: number) => {
-    const toEmp = employees.find((e) => e.id === toEmployeeId);
-    if (!toEmp) return;
+    const targetEmp = employees.find((e) => e.id === toEmployeeId);
     const newKudo: PeerKudo = {
       id: `kudo_${Date.now()}`,
-      fromName: currentUser.name,
-      fromAvatar: currentUser.avatar,
-      toName: `${toEmp.firstName} ${toEmp.lastName}`,
-      toAvatar: toEmp.avatar,
+      fromName: currentUser?.name || 'Colleague',
+      fromAvatar:
+        currentUser?.avatar ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      toName: targetEmp ? `${targetEmp.firstName} ${targetEmp.lastName}` : 'Team Member',
+      toAvatar: targetEmp?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
       badge,
       message,
       points,
       timestamp: 'Just now',
-      likes: 1,
+      likes: 0,
+      likesCount: 0,
+      hasLiked: false,
     };
     setPeerKudos((prev) => [newKudo, ...prev]);
   };
 
   const likePeerKudo = (kudoId: string) => {
-    setPeerKudos((prev) => prev.map((k) => (k.id === kudoId ? { ...k, likes: k.likes + 1 } : k)));
+    setPeerKudos((prev) =>
+      prev.map((k) =>
+        k.id === kudoId
+          ? {
+              ...k,
+              hasLiked: !k.hasLiked,
+              likes: Math.max(0, (k.likes || 0) + (k.hasLiked ? -1 : 1)),
+              likesCount: Math.max(0, ((k.likesCount ?? k.likes) || 0) + (k.hasLiked ? -1 : 1)),
+            }
+          : k
+      )
+    );
   };
 
-  // Assets & Docs
+  // Assets & Documents
+  const addAsset = (asset: Omit<CompanyAsset, 'id'>) => {
+    setCompanyAssets((prev) => [{ ...asset, id: `asset_${Date.now()}` }, ...prev]);
+  };
+
   const assignAsset = (assetId: string, employeeId: string) => {
     const emp = employees.find((e) => e.id === employeeId);
     setCompanyAssets((prev) =>
@@ -744,7 +1208,7 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           ? {
               ...a,
               status: 'Allocated',
-              assignedToEmployeeId: employeeId,
+              assignedToId: employeeId,
               assignedToName: emp ? `${emp.firstName} ${emp.lastName}` : undefined,
             }
           : a
@@ -759,7 +1223,7 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           ? {
               ...a,
               status: 'In Stock',
-              assignedToEmployeeId: undefined,
+              assignedToId: undefined,
               assignedToName: undefined,
             }
           : a
@@ -767,40 +1231,26 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     );
   };
 
-  const addAsset = (asset: Omit<CompanyAsset, 'id'>) => {
-    const newAsset: CompanyAsset = {
-      ...asset,
-      id: `asset_${Date.now()}`,
-    };
-    setCompanyAssets((prev) => [newAsset, ...prev]);
-  };
-
   const uploadDocument = (doc: Omit<DocumentItem, 'id' | 'uploadedDate'>) => {
-    const newDoc: DocumentItem = {
-      ...doc,
-      id: `doc_${Date.now()}`,
-      uploadedDate: todayStr,
-    };
-    setDocuments((prev) => [newDoc, ...prev]);
+    setDocuments((prev) => [{ ...doc, id: `doc_${Date.now()}`, uploadedDate: todayStr }, ...prev]);
   };
 
   const toggleWorkflow = (id: string) => {
     setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, isActive: !w.isActive } : w)));
   };
 
-  // Smart Helper Assistant
+  // Smart Assistant
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([
     {
-      id: 'msg_welcome',
+      id: 'msg_01',
       sender: 'assistant',
-      text: `Hello ${currentUser.name.split(' ')[0]}! I'm your HRMate Smart Assistant. I can summarize team attendance, check pending leave requests, compute payroll disbursements, or trigger quick actions across our workspace.`,
-      timestamp: 'Today at 09:00 AM',
+      text: `Hello! I am your HRMate Smart Assistant. You can ask me to summarize attendance, verify leave applications, analyze payroll, or check OKR completion rates.`,
+      timestamp: '09:00 AM',
       quickActions: [
         { label: '📊 Summarize today\'s attendance', actionKey: 'SUMMARIZE_ATTENDANCE' },
         { label: '⏳ Check pending leave requests', actionKey: 'CHECK_LEAVES' },
         { label: '💰 View monthly payroll totals', actionKey: 'VIEW_PAYROLL' },
-        { label: '🎯 Show OKR progress', actionKey: 'SHOW_OKRS' },
       ],
     },
   ]);
@@ -815,63 +1265,37 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     setAssistantMessages((prev) => [...prev, userMsg]);
 
-    // Intelligent context-aware answer generation from live state
     setTimeout(() => {
       const lower = queryText.toLowerCase();
       let reply = '';
-      let actions: AssistantMessage['quickActions'] = undefined;
+      let actions: { label: string; actionKey: string; payload?: any }[] | undefined = undefined;
 
-      if (lower.includes('attendance') || lower.includes('present') || lower.includes('punch')) {
-        const presentCount = attendanceRecords.filter((r) => r.date === todayStr).length;
-        const lateCount = attendanceRecords.filter((r) => r.date === todayStr && r.status === 'Late').length;
-        reply = `Here is today's Attendance Summary (${todayStr}):\n• Total Punches Today: ${presentCount} / ${employees.length} employees\n• On-time punches: ${presentCount - lateCount}\n• Late arrivals: ${lateCount}\n• Office HQ Geofence check: Active at ${company.hqLocation.name} (${company.hqLocation.radiusMeters}m radius).`;
+      if (lower.includes('attendance') || lower.includes('present') || lower.includes('checkin')) {
+        const todayCount = attendanceRecords.filter((r) => r.date === todayStr).length;
+        reply = `Today (${todayStr}), ${todayCount} of ${employees.length} employees have recorded their biometric camera punch. ${
+          isPunchedIn ? 'You are currently punched in and verified on-site.' : 'You have not checked in yet today.'
+        }`;
         actions = [
-          { label: 'Open Attendance Module', actionKey: 'NAV_ATTENDANCE' },
-          { label: 'Open Camera Check-In', actionKey: 'OPEN_PUNCH_MODAL' },
+          { label: 'Open Punch Camera', actionKey: 'OPEN_PUNCH_MODAL' },
+          { label: 'View Attendance Records', actionKey: 'NAV_ATTENDANCE' },
         ];
-      } else if (lower.includes('leave') || lower.includes('pto') || lower.includes('vacation')) {
-        const pending = leaveRequests.filter((l) => l.status === 'Pending');
-        if (pending.length > 0) {
-          const names = pending.map((p) => `${p.employeeName} (${p.days}d ${p.type})`).join(', ');
-          reply = `There are currently ${pending.length} pending leave requests:\n${names}.\n\nWould you like me to approve all eligible pending requests?`;
-          actions = [
-            { label: '✅ Approve All Pending Leaves', actionKey: 'APPROVE_ALL_LEAVES' },
-            { label: 'View Leave Tracker', actionKey: 'NAV_LEAVES' },
-          ];
-        } else {
-          reply = `All leave requests are currently reviewed! No pending approvals. Active holiday schedule has ${holidays.length} listed holidays.`;
-        }
-      } else if (lower.includes('payroll') || lower.includes('salary') || lower.includes('net pay') || lower.includes('tax')) {
-        const totalNet = payrollRuns.reduce((sum, r) => sum + r.netPayable, 0);
-        const totalTax = payrollRuns.reduce((sum, r) => sum + r.statutoryTax, 0);
-        reply = `Current Payroll Run Summary:\n• Processed Records: ${payrollRuns.length}\n• Disbursed Net Pay: $${totalNet.toLocaleString()} ${selectedCurrency}\n• Statutory Tax Withheld: $${totalTax.toLocaleString()} ${selectedCurrency}\n• Active Currency: ${selectedCurrency}`;
+      } else if (lower.includes('leave') || lower.includes('vacation') || lower.includes('pto')) {
+        const pending = leaveRequests.filter((l) => l.status === 'Pending').length;
+        reply = `There are currently ${pending} pending leave request${pending === 1 ? '' : 's'} awaiting administrative approval in the workspace.`;
+        actions = [
+          { label: 'Review Leave Tracker', actionKey: 'NAV_LEAVES' },
+          ...(pending > 0 ? [{ label: 'Approve All Pending', actionKey: 'APPROVE_ALL_LEAVES' }] : []),
+        ];
+      } else if (lower.includes('payroll') || lower.includes('salary') || lower.includes('wage')) {
+        const totalBase = employees.reduce((sum, e) => sum + e.salary.baseMonthly, 0);
+        reply = `Monthly payroll summary for ${company.name}:\n• Total Employees: ${employees.length}\n• Estimated Monthly Base: $${totalBase.toLocaleString()} ${selectedCurrency}\n• Processed Runs: ${payrollRuns.length} vouchers disbursed.`;
         actions = [
           { label: 'Open Payroll Engine', actionKey: 'NAV_PAYROLL' },
-          { label: 'Open Tax Calculator', actionKey: 'NAV_TAX_CALC' },
         ];
-      } else if (lower.includes('okr') || lower.includes('goal') || lower.includes('performance')) {
-        if (goalsOKR.length > 0) {
-          const avg = Math.round(goalsOKR.reduce((a, b) => a + b.progress, 0) / goalsOKR.length);
-          reply = `Company & Team OKR Overview:\n• Active Objectives: ${goalsOKR.length}\n• Overall Completion Rate: ${avg}%\n• Top Goal: "${goalsOKR[0].title}" (${goalsOKR[0].progress}% completion).`;
-        } else {
-          reply = `There are currently no active OKRs recorded in the workspace.\nYou can establish company or departmental goals in the Performance module.`;
-        }
-        actions = [{ label: 'Go to OKR Tracker', actionKey: 'NAV_OKRS' }];
-      } else if (lower.includes('candidate') || lower.includes('recruit') || lower.includes('ats') || lower.includes('interview')) {
-        const inInterview = candidates.filter((c) => c.stage === 'Interview' || c.stage === 'Technical Round').length;
-        const inOffer = candidates.filter((c) => c.stage === 'Offer').length;
-        const hired = candidates.filter((c) => c.stage === 'Hired').length;
-        reply = `Recruitment Pipeline Status:\n• Active Candidates in Pool: ${candidates.length}\n• In Interview / Assessment: ${inInterview}\n• Offers Extended: ${inOffer}\n• Hired Candidates: ${hired}\n• Scheduled Interview Sessions: ${interviews.length}`;
-        actions = [{ label: 'View ATS Kanban Board', actionKey: 'NAV_ATS' }];
-      } else if (lower.includes('policy') || lower.includes('gratuity') || lower.includes('overtime')) {
-        reply = `Company Policy Overview:\n• Standard Working Hours: 40 hrs/week (Mon-Fri 9AM-5PM)\n• Overtime Rates: 1.5x hourly rate on weekdays, 2.0x on weekends/holidays\n• End-of-Service Gratuity: 21 days basic pay per year for first 5 years, 30 days per year thereafter\n• PTO Entitlement: 20 days annual + 10 days sick leave with carry-forward up to 5 days.`;
+      } else if (lower.includes('announcement') || lower.includes('broadcast')) {
+        reply = `We have ${announcements.length} active broadcast announcement${announcements.length === 1 ? '' : 's'} published. All employees can view them directly on their ESS dashboard.`;
       } else {
-        const uniqueDepts = new Set(employees.map((e) => e.department)).size;
-        reply = `I analyzed our workforce database for "${queryText}". We have ${employees.length} active employee${employees.length === 1 ? '' : 's'} across ${uniqueDepts} department${uniqueDepts === 1 ? '' : 's'}, with ${attendanceRecords.length} recorded attendance events and ${companyAssets.length} tracked company assets.`;
-        actions = [
-          { label: 'View Employee Directory', actionKey: 'NAV_DIRECTORY' },
-          { label: 'Summarize Attendance', actionKey: 'SUMMARIZE_ATTENDANCE' },
-        ];
+        reply = `I processed your request for "${queryText}". Our workspace currently manages ${employees.length} team members across ${company.name}.`;
       }
 
       const botMsg: AssistantMessage = {
@@ -893,8 +1317,6 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       sendAssistantQuery('Check pending leave requests');
     } else if (actionKey === 'VIEW_PAYROLL') {
       sendAssistantQuery('View monthly payroll totals');
-    } else if (actionKey === 'SHOW_OKRS') {
-      sendAssistantQuery('Show OKR progress');
     } else if (actionKey === 'APPROVE_ALL_LEAVES') {
       leaveRequests.forEach((l) => {
         if (l.status === 'Pending') {
@@ -917,18 +1339,6 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     } else if (actionKey === 'NAV_PAYROLL') {
       setActiveModule('payroll');
       setActiveSubTab('payroll-engine');
-    } else if (actionKey === 'NAV_TAX_CALC') {
-      setActiveModule('payroll');
-      setActiveSubTab('tax-calculator');
-    } else if (actionKey === 'NAV_OKRS') {
-      setActiveModule('performance');
-      setActiveSubTab('okr-goals');
-    } else if (actionKey === 'NAV_ATS') {
-      setActiveModule('talent');
-      setActiveSubTab('ats-kanban');
-    } else if (actionKey === 'NAV_DIRECTORY') {
-      setActiveModule('core');
-      setActiveSubTab('employees');
     } else if (actionKey === 'OPEN_PUNCH_MODAL') {
       setIsPunchModalOpen(true);
     }
@@ -952,13 +1362,17 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   return (
     <HRContext.Provider
       value={{
+        isSetupComplete,
+        completeInitialSetup,
         currentUser,
         activeRole,
         switchUser,
         switchRole,
         loginUser,
+        logoutUser,
         registerUser,
         allSessions,
+        resetEntireSystem,
         company,
         updateCompany,
         employees,
@@ -967,6 +1381,14 @@ export const HRProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         deleteEmployee,
         selectedEmployeeDetail,
         setSelectedEmployeeDetail,
+        announcements,
+        addAnnouncement,
+        updateAnnouncement,
+        deleteAnnouncement,
+        payslipTemplate,
+        updatePayslipTemplate,
+        resetPayslipTemplate,
+        importPayslipTemplate,
         attendanceRecords,
         isPunchedIn,
         currentAttendanceRecord,

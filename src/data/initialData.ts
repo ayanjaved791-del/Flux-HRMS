@@ -26,73 +26,51 @@ import {
   DocumentItem,
   WorkflowRule,
   ApiKeyIntegration,
-  UserSession
+  UserSession,
+  Announcement,
+  PayslipTemplate
 } from '../types';
 
 export const initialCompany: Company = {
   id: 'comp_default',
-  name: 'Acme Technologies',
+  name: 'Enterprise HRMS',
   logo: 'HRMate',
-  industry: 'Technology & Cloud Solutions',
+  industry: 'Corporate & Technology',
   currency: 'USD',
-  timezone: 'America/Los_Angeles (PST)',
+  timezone: 'America/New_York (EST)',
   hqLocation: {
-    name: 'Corporate HQ, 450 Mission St',
+    name: 'Corporate HQ Suite 400',
     latitude: 37.7749,
     longitude: -122.4194,
-    radiusMeters: 150,
+    radiusMeters: 200,
   },
 };
 
-// Initial admin employee representing the current workspace owner
-export const initialEmployees: Employee[] = [
-  {
-    id: 'emp_admin',
-    employeeCode: 'EMP-1001',
-    firstName: 'Alex',
-    lastName: 'Morgan',
-    email: 'admin@company.io',
-    phone: '+1 (415) 555-0100',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    department: 'Human Resources',
-    designation: 'VP of People & Culture',
-    joiningDate: '2024-01-15',
-    employmentType: 'Full-time',
-    status: 'Active',
-    salary: {
-      baseMonthly: 12500,
-      hra: 3125,
-      specialAllowance: 1875,
-      currency: 'USD',
-    },
-    leaveBalances: {
-      annual: 20,
-      sick: 10,
-      casual: 5,
-      parental: 15,
-    },
-    location: 'San Francisco, CA (HQ)',
-    emergencyContact: {
-      name: 'Taylor Morgan',
-      relation: 'Spouse',
-      phone: '+1 (415) 555-0101',
-    },
-  },
-];
+// No fake dummy profiles — users create their own company and employee roster
+export const initialEmployees: Employee[] = [];
 
-export const initialSessions: UserSession[] = [
-  {
-    id: 'user_admin',
-    name: 'Alex Morgan',
-    email: 'admin@company.io',
-    role: 'admin',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    companyId: 'comp_default',
-    department: 'Human Resources',
-    designation: 'VP of People & Culture',
-    employeeId: 'emp_admin',
-  },
-];
+export const initialSessions: UserSession[] = [];
+
+export const initialAnnouncements: Announcement[] = [];
+
+export const defaultPayslipTemplate: PayslipTemplate = {
+  fontFamily: 'Plus Jakarta Sans',
+  primaryColor: '#ea580c',
+  headerStyle: 'banner',
+  headerTitle: 'CONFIDENTIAL SALARY DISBURSEMENT STATEMENT',
+  headerSubtitle: 'Certified Monthly Compensation & Benefits Breakdown',
+  companyTaxNumber: 'TAX-REG-2026-90812',
+  showLogo: true,
+  showQrCode: true,
+  earningsHeading: 'Monthly Gross Earnings & Allowances',
+  deductionsHeading: 'Statutory Taxes & Payroll Deductions',
+  netPayHeading: 'Net Take-Home Disbursed Compensation',
+  accountDetailsHeading: 'Disbursement Account Credentials',
+  footerNote: 'This voucher is an authenticated digital record of payroll disbursement. Direct deposit verified through corporate banking gateway.',
+  showEmployerSignature: true,
+  signatoryTitle: 'Authorized Payroll Administrator',
+  signatoryName: 'Office of People & Finance',
+};
 
 export const initialAttendanceRecords: AttendanceRecord[] = [];
 
@@ -100,24 +78,7 @@ export const initialLeaveRequests: LeaveRequest[] = [];
 
 export const initialTimesheets: TimesheetEntry[] = [];
 
-export const initialShiftRosters: ShiftRoster[] = [
-  {
-    id: 'shift_admin',
-    employeeId: 'emp_admin',
-    employeeName: 'Alex Morgan',
-    department: 'Human Resources',
-    weekStart: '2026-10-26',
-    shifts: {
-      mon: 'Morning (09:00 - 17:00)',
-      tue: 'Morning (09:00 - 17:00)',
-      wed: 'Morning (09:00 - 17:00)',
-      thu: 'Morning (09:00 - 17:00)',
-      fri: 'Morning (09:00 - 17:00)',
-      sat: 'Off',
-      sun: 'Off',
-    },
-  },
-];
+export const initialShiftRosters: ShiftRoster[] = [];
 
 export const initialHolidays: Holiday[] = [
   { id: 'hol_01', name: 'New Year\'s Day', date: '2026-01-01', day: 'Thursday', type: 'Public', isMandatory: true },
@@ -184,13 +145,7 @@ export const initialCandidates: Candidate[] = [];
 
 export const initialInterviews: InterviewSession[] = [];
 
-export const initialOnboardingTasks: OnboardingTask[] = [
-  { id: 'onb_01', employeeId: 'emp_admin', title: 'Sign Mutual Non-Disclosure Agreement', description: 'Complete corporate compliance packet', category: 'Documentation', completed: true, dueDate: '2026-11-01' },
-  { id: 'onb_02', employeeId: 'emp_admin', title: 'Collect Work Laptop & Hardware', description: 'Receive encrypted device from IT', category: 'IT Setup', completed: true, dueDate: '2026-11-02' },
-  { id: 'onb_03', employeeId: 'emp_admin', title: 'Setup Hardware MFA & Security Keys', description: 'Configure multi-factor authentication', category: 'IT Setup', completed: true, dueDate: '2026-11-03' },
-  { id: 'onb_04', employeeId: 'emp_admin', title: 'Complete Compliance & Security Overview', description: 'Mandatory annual workplace security training', category: 'Compliance', completed: false, dueDate: '2026-11-10' },
-  { id: 'onb_05', employeeId: 'emp_admin', title: 'Submit Direct Deposit & Tax W-4 Form', description: 'Upload payroll information to HR Vault', category: 'Documentation', completed: false, dueDate: '2026-11-12' },
-];
+export const initialOnboardingTasks: OnboardingTask[] = [];
 
 export const initialBackgroundChecks: BackgroundCheck[] = [];
 

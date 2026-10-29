@@ -45,7 +45,7 @@ export const DocumentVault: React.FC = () => {
       fileSize,
       fileType,
       isCompanyWide: category === 'Company Policy',
-      ownerName: currentUser.name,
+      ownerName: currentUser?.name || 'Administrator',
     });
 
     setIsUploadOpen(false);

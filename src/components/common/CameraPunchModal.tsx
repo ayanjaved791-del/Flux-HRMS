@@ -94,7 +94,7 @@ export const CameraPunchModal: React.FC = () => {
       }
     } else {
       // Fallback simulated capture for sandboxed environments
-      setCapturedPhoto(currentUser.avatar);
+      setCapturedPhoto(currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80');
     }
   };
 
@@ -105,7 +105,7 @@ export const CameraPunchModal: React.FC = () => {
 
   const handleConfirmPunch = () => {
     setIsProcessing(true);
-    const photoToSave = capturedPhoto || currentUser.avatar;
+    const photoToSave = capturedPhoto || currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
 
     setTimeout(() => {
       let res;
@@ -178,8 +178,8 @@ export const CameraPunchModal: React.FC = () => {
             ) : (
               <div className="flex flex-col items-center justify-center p-6 text-center text-slate-300">
                 <img
-                  src={currentUser.avatar}
-                  alt={currentUser.name}
+                  src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                  alt={currentUser?.name || 'User'}
                   className="w-24 h-24 rounded-full border-4 border-orange-500/80 object-cover mb-3 shadow-lg"
                 />
                 <p className="text-xs font-medium text-slate-200">

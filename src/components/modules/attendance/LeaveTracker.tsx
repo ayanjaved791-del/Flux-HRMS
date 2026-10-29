@@ -34,7 +34,7 @@ export const LeaveTracker: React.FC = () => {
   const [reason, setReason] = useState('');
 
   const currentEmp =
-    employees.find((e) => e.id === currentUser.employeeId) ||
+    employees.find((e) => e.id === currentUser?.employeeId) ||
     employees[0];
 
   const filtered = leaveRequests.filter((l) => {

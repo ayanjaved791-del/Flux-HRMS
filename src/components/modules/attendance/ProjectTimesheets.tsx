@@ -33,7 +33,7 @@ export const ProjectTimesheets: React.FC = () => {
   const handleCreateTimesheet = (e: React.FormEvent) => {
     e.preventDefault();
     addTimesheet({
-      employeeId: currentUser.employeeId || 'emp_02',
+      employeeId: currentUser?.employeeId || 'emp_01',
       weekStarting: '2026-10-26',
       projectName,
       clientName,

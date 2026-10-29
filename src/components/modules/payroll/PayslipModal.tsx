@@ -6,9 +6,12 @@ import {
   X,
   Building2,
   CheckCircle2,
-  ShieldCheck
+  ShieldCheck,
+  CreditCard,
+  QrCode
 } from 'lucide-react';
 import { PayrollRun, Company } from '../../../types';
+import { useHR } from '../../../context/HRContext';
 
 interface PayslipModalProps {
   run: PayrollRun | null;
@@ -17,15 +20,28 @@ interface PayslipModalProps {
 }
 
 export const PayslipModal: React.FC<PayslipModalProps> = ({ run, company, onClose }) => {
+  const { payslipTemplate } = useHR();
+
   if (!run) return null;
 
   const handlePrint = () => {
     window.print();
   };
 
+  const getFontFamilyClass = (font: string) => {
+    switch (font) {
+      case 'JetBrains Mono':
+        return 'font-mono';
+      case 'Georgia':
+        return 'font-serif';
+      default:
+        return 'font-sans';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Top Bar */}
         <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
@@ -50,29 +66,56 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ run, company, onClos
           </div>
         </div>
 
-        {/* Printable Payslip Body */}
-        <div className="p-8 overflow-y-auto space-y-6 text-xs text-slate-800 font-sans print:p-0">
+        {/* Printable Payslip Body adhering to Custom Design */}
+        <div
+          className={`p-6 sm:p-8 overflow-y-auto space-y-6 text-xs text-slate-800 print:p-0 ${getFontFamilyClass(
+            payslipTemplate.fontFamily
+          )}`}
+        >
           {/* Header */}
-          <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-black text-orange-600 tracking-tight">HRMate</span>
-                <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">
-                  Enterprise
-                </span>
+          {payslipTemplate.headerStyle === 'banner' ? (
+            <div
+              className="p-5 rounded-2xl text-white"
+              style={{ backgroundColor: payslipTemplate.primaryColor }}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  {payslipTemplate.showLogo && (
+                    <span className="inline-block px-2.5 py-0.5 rounded bg-white/20 font-black text-xs tracking-wider mb-2">
+                      {company.name}
+                    </span>
+                  )}
+                  <h1 className="text-base font-black tracking-tight">{payslipTemplate.headerTitle}</h1>
+                  <p className="text-[11px] text-white/80 mt-0.5">{payslipTemplate.headerSubtitle}</p>
+                </div>
+                <div className="text-right text-[11px] font-mono">
+                  <p className="font-bold">{company.hqLocation.name}</p>
+                  <p className="text-white/80 text-[10px] mt-0.5">Ref: {payslipTemplate.companyTaxNumber}</p>
+                </div>
               </div>
-              <p className="font-bold text-sm text-slate-900 mt-1">{company.name}</p>
-              <p className="text-slate-500 text-[11px]">{company.hqLocation.name}</p>
             </div>
+          ) : (
+            <div className="flex items-start justify-between border-b border-slate-200 pb-5">
+              <div>
+                <h1 className="text-base font-bold text-slate-900" style={{ color: payslipTemplate.primaryColor }}>
+                  {payslipTemplate.headerTitle}
+                </h1>
+                <p className="font-semibold text-xs text-slate-800 mt-0.5">{company.name}</p>
+                <p className="text-slate-500 text-[11px]">{payslipTemplate.headerSubtitle}</p>
+              </div>
 
-            <div className="text-right">
-              <span className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 text-[11px] font-bold uppercase">
-                {run.paymentStatus} · Electronic Disbursal
-              </span>
-              <p className="text-slate-500 mt-2 font-mono text-[11px]">Pay Period: {run.period}</p>
-              <p className="text-slate-400 font-mono text-[10px]">Reference: {run.id}</p>
+              <div className="text-right">
+                <span
+                  className="px-2.5 py-1 rounded text-white text-[10px] font-bold uppercase"
+                  style={{ backgroundColor: payslipTemplate.primaryColor }}
+                >
+                  {run.paymentStatus} · Electronic Disbursal
+                </span>
+                <p className="text-slate-500 mt-2 font-mono text-[11px]">Pay Period: {run.period}</p>
+                <p className="text-slate-400 font-mono text-[10px]">Reference: {run.id}</p>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Employee Meta Details */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -98,8 +141,11 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ run, company, onClos
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Earnings */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 font-bold text-slate-700">
-                Earnings Breakdown
+              <div
+                className="px-4 py-2 font-bold text-white text-xs"
+                style={{ backgroundColor: payslipTemplate.primaryColor }}
+              >
+                {payslipTemplate.earningsHeading}
               </div>
               <div className="p-4 space-y-2 text-xs">
                 <div className="flex justify-between">
@@ -129,12 +175,12 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ run, company, onClos
 
             {/* Deductions */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 font-bold text-slate-700">
-                Statutory & Voluntary Deductions
+              <div className="bg-slate-800 px-4 py-2 font-bold text-white text-xs">
+                {payslipTemplate.deductionsHeading}
               </div>
               <div className="p-4 space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Statutory Tax Withholding (IRS/State)</span>
+                  <span className="text-slate-600">Statutory Tax Withholding</span>
                   <span className="font-semibold text-red-600 font-mono">-${run.statutoryTax.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
@@ -156,23 +202,31 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ run, company, onClos
           </div>
 
           {/* Net Pay Highlight Box */}
-          <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between">
+          <div
+            className="p-4 rounded-xl border flex items-center justify-between text-white"
+            style={{ backgroundColor: payslipTemplate.primaryColor }}
+          >
             <div>
-              <p className="text-[11px] uppercase font-bold text-emerald-800">Net Take-Home Pay Disbursed</p>
-              <p className="text-2xl font-black text-emerald-700 tabular-nums font-mono mt-0.5">
+              <p className="text-[11px] uppercase font-bold text-white/80">{payslipTemplate.netPayHeading}</p>
+              <p className="text-2xl font-black tabular-nums font-mono mt-0.5">
                 ${run.netPayable.toLocaleString()} USD
               </p>
             </div>
-            <div className="text-right text-[11px] text-emerald-800 font-medium">
-              <p>Direct Deposit Initiated: {run.disbursedDate || 'Oct 28, 2026'}</p>
-              <p className="text-[10px] text-emerald-600">ACH Settlement Confirmed</p>
+            <div className="text-right text-[11px] text-white/90 font-medium">
+              <p>Direct Deposit Initiated: {run.disbursedDate || 'Today'}</p>
+              <p className="text-[10px] text-white/80">ACH Settlement Confirmed</p>
             </div>
           </div>
 
-          {/* Signoff */}
-          <div className="pt-4 border-t border-slate-100 flex justify-between text-[10px] text-slate-400">
-            <span>This is an authenticated computer-generated payroll advisory.</span>
-            <span>HRMate Enterprise Engine 2026</span>
+          {/* Signoff & Footnote */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+            <span>{payslipTemplate.footerNote}</span>
+            {payslipTemplate.showQrCode && (
+              <div className="flex items-center gap-1.5">
+                <QrCode className="w-5 h-5 text-slate-600" />
+                <span className="font-mono">VERIFIED</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
