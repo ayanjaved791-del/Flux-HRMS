@@ -1,0 +1,6 @@
+{
+  "name": "HRMate Enterprise HRMS",
+  "description": "Comprehensive HR Management System with camera check-in, geofencing, employee and admin dashboards, payroll, ATS, OKRs, and smart assistant.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
